@@ -5,10 +5,6 @@
 </p>
 
 <p align="center">
-  <img src=".github/assets/logo-horizontal.jpg" alt="AegisAC" width="420">
-</p>
-
-<p align="center">
   <strong>Detect. Verify. Protect.</strong>
   <br>
   Server-side anti-cheat for Counter-Strike 2, built with SwiftlyS2.
