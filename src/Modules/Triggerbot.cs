@@ -161,7 +161,7 @@ internal sealed class TriggerbotDetector
 
 	public void OnClientDisconnect(int playerId)
 	{
-		if (playerId >= 1 && playerId < _players.Length)
+		if (playerId >= 0 && playerId < _players.Length)
 			_players[playerId].Reset();
 	}
 
@@ -183,7 +183,7 @@ internal sealed class TriggerbotDetector
 			return;
 
 		int id = player.PlayerID;
-		if (id < 1 || id >= _players.Length)
+		if (id < 0 || id >= _players.Length)
 			return;
 
 		var st = _players[id];
@@ -243,7 +243,7 @@ internal sealed class TriggerbotDetector
 			return;
 
 		int id = player.PlayerID;
-		if (id < 1 || id >= _players.Length)
+		if (id < 0 || id >= _players.Length)
 			return;
 
 		var pawn = player.PlayerPawn;
@@ -289,7 +289,7 @@ internal sealed class TriggerbotDetector
 			st.ActiveTarget = targetIndex;
 			st.ContactStartCommand = -1;
 
-			if (targetIndex >= 1)
+			if (targetIndex >= 0)
 			{
 				st.ContactStartCommand = commandNumber;
 				float aimMovement = st.LastAnglesValid ? AimMath.AngularDistance(st.LastAngles, viewAngles) : 0.0f;
@@ -302,7 +302,7 @@ internal sealed class TriggerbotDetector
 			}
 		}
 
-		if (targetIndex >= 1)
+		if (targetIndex >= 0)
 		{
 			st.LastContactTick[targetIndex] = currentTick;
 		}
@@ -312,12 +312,12 @@ internal sealed class TriggerbotDetector
 		_smokes.RemoveAll(s => s.Expires <= now);
 
 		bool smokeOccluded = now < _smokeStateUnknownUntil;
-		if (!smokeOccluded && targetIndex >= 1)
+		if (!smokeOccluded && targetIndex >= 0)
 		{
 			smokeOccluded = _smokes.Any(s => SegmentTouchesSmokeBounds(eye, hitPoint, s.Center));
 		}
 
-		if (isFreshAttack && targetIndex >= 1 && st.ContactStartCommand >= 0)
+		if (isFreshAttack && targetIndex >= 0 && st.ContactStartCommand >= 0)
 		{
 			int reactionTicks = commandNumber - st.ContactStartCommand;
 			if (!smokeOccluded)
@@ -352,17 +352,17 @@ internal sealed class TriggerbotDetector
 			return;
 
 		int id = player.PlayerID;
-		if (id < 1 || id >= _players.Length)
+		if (id < 0 || id >= _players.Length)
 			return;
 
 		var st = _players[id];
 		int targetIndex = st.ActiveTarget;
 		int contactStart = st.ContactStartCommand;
 
-		if (targetIndex < 1)
+		if (targetIndex < 0)
 		{
 			// Check if contact was lost within the last 2 ticks due to weapon recoil punch
-			for (int t = 1; t <= AimbotDetector.MaxPlayers; t++)
+			for (int t = 0; t < AimbotDetector.MaxPlayers; t++)
 			{
 				if (st.LastContactTick[t] >= 0 && currentTick - st.LastContactTick[t] <= 2)
 				{
@@ -373,7 +373,7 @@ internal sealed class TriggerbotDetector
 			}
 		}
 
-		if (targetIndex < 1 || contactStart < 0)
+		if (targetIndex < 0 || contactStart < 0)
 			return;
 
 		int cmdNum = st.LastCommandNumber >= 0 ? st.LastCommandNumber : currentTick;
@@ -403,7 +403,7 @@ internal sealed class TriggerbotDetector
 			return;
 
 		int attackerId = attacker.PlayerID;
-		if (attackerId < 1 || attackerId >= _players.Length)
+		if (attackerId < 0 || attackerId >= _players.Length)
 			return;
 
 		var st = _players[attackerId];
@@ -503,7 +503,7 @@ internal sealed class TriggerbotDetector
 			uint hitIndex = trace.Entity.Index;
 			nint hitAddress = trace.Entity.Address;
 
-			for (int i = 1; i <= AimbotDetector.MaxPlayers; i++)
+			for (int i = 0; i < AimbotDetector.MaxPlayers; i++)
 			{
 				var target = _getPlayer(i);
 				if (target is not { IsValid: true } || target.PlayerID == player.PlayerID)
@@ -524,7 +524,7 @@ internal sealed class TriggerbotDetector
 					directHit = true;
 
 				if (directHit)
-					return (i, trace.EndPos);
+					return (target.PlayerID, trace.EndPos);
 			}
 		}
 
@@ -533,7 +533,7 @@ internal sealed class TriggerbotDetector
 		float bestDist = float.MaxValue;
 		Vector bestPoint = trace.DidHit ? trace.EndPos : end;
 
-		for (int i = 1; i <= AimbotDetector.MaxPlayers; i++)
+		for (int i = 0; i < AimbotDetector.MaxPlayers; i++)
 		{
 			var target = _getPlayer(i);
 			if (target is not { IsValid: true } || target.PlayerID == player.PlayerID)
@@ -575,13 +575,13 @@ internal sealed class TriggerbotDetector
 				if (t < bestDist)
 				{
 					bestDist = t;
-					bestTarget = i;
+					bestTarget = target.PlayerID;
 					bestPoint = new Vector(px, py, pz);
 				}
 			}
 		}
 
-		if (bestTarget >= 1)
+		if (bestTarget >= 0)
 			return (bestTarget, bestPoint);
 
 		return (-1, trace.EndPos);

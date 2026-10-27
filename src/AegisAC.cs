@@ -110,6 +110,7 @@ public sealed class AegisAC : BasePlugin
 	{
 		_detector.OnProcessUsercmds(ctx.Params.Player, ctx.Params.Usercmds);
 		_triggerbot.OnProcessUsercmds(ctx.Params.Player, ctx.Params.Usercmds);
+		_aimlock.OnProcessUsercmds(ctx.Params.Player, ctx.Params.Usercmds);
 	}
 
 	private void OnSetupMove(ref SetupMoveMovementPreContext ctx)
