@@ -107,12 +107,12 @@ The Triggerbot detector inspects real-time crosshair raycast targeting, sub-tick
 ### Detection Methods
 
 1. **Sub-Tick Reaction Timing Analysis**
-   - **How it works:** Tracks when an enemy enters the player's crosshair (both aim-driven flicks and target-driven angle holds). Compares crosshair acquisition tick to the sub-tick command where primary attack is initiated.
-   - **Trigger Condition:** Recurring reaction times of 0 to 1 tick (≤ 15.6ms at 64-tick), which are physically impossible for human neural pathways.
+   - **How it works:** Tracks when an enemy enters the player's crosshair (both aim-driven flicks and target-driven angle holds). Compares the exact target acquisition command to the sub-tick command where the weapon discharged.
+   - **Trigger Condition:** Reaction latency ≤ `MaxReactionTicks` (default: ≤ 3 ticks / ~46.8ms at 64-tick), which is physically impossible for human neural response.
 
-2. **Dynamic Decay Scoring System**
-   - **How it works:** Utilizes a progressive reaction score. Inhuman reaction times (0-1 tick) add +2 to the score, while normal human reactions (≥ 2 ticks) actively decay the score by 3, preventing bans from isolated lucky pre-fires.
-   - **Trigger Condition:** Cumulative reaction score reaching `DetectionThreshold` (default: 10) within the 5-minute sliding window.
+2. **3-Incident Evidence System**
+   - **How it works:** Follows the same evidence-based structure as Aimbot. Each verified damaging shot with unnatural reaction latency records 1 triggerbot incident.
+   - **Trigger Condition:** Accumulating `EvidenceThreshold` (default: 3) verified incidents within a 5-minute sliding window triggers the configured punishment.
 
 3. **Smoke Occlusion & Safety Monitoring**
    - **How it works:** Dynamically tracks smoke grenade detonation coordinates and volumetric boundaries. Automatically discards shots through active smokes or during uncertain map-load smoke states to prevent false flags through visual volumetric boundaries.
@@ -121,9 +121,10 @@ The Triggerbot detector inspects real-time crosshair raycast targeting, sub-tick
 
 | Metric | Setting / Behavior |
 | :--- | :--- |
-| **Strictness Level** | **Moderate / High Precision** |
+| **Strictness Level** | **Conservative (High Precision)** |
 | **Evidence Window** | 5 Minutes (Sliding) |
-| **Score Threshold** | 10 Score points (5 consecutive 0-1 tick reactions, decaying with normal shots) |
+| **Evidence Threshold** | 3 Verified Damaging Incidents required |
+| **Max Reaction Timing** | ≤ 3 Ticks (~46.8ms at 64-tick) |
 | **Damage Gate** | Active — evaluated strictly upon confirmed `player_hurt` events |
 | **Smoke Exclusion** | Active — automated ray-box smoke volume intersection check |
 
@@ -218,10 +219,13 @@ AegisAC configurations are stored in `addons/swiftlys2/configs/plugins/AegisAC/c
       "Enabled": true,
 
       // Punishment applied upon detection: "none", "kick", or "ban"
-      "Punishment": "none",
+      "Punishment": "ban",
 
-      // Reaction score threshold required to trigger punishment (decay score)
-      "DetectionThreshold": 10
+      // Number of unnatural triggerbot reaction incidents within 5 minutes required to punish
+      "EvidenceThreshold": 3,
+
+      // Maximum reaction ticks considered an unnatural triggerbot reaction (default: 3 ticks / ~46.8ms)
+      "MaxReactionTicks": 3
     },
 
     // Discord webhook notifications

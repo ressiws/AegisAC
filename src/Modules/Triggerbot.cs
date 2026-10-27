@@ -48,6 +48,11 @@ internal sealed class TriggerIncident
 {
 	public required DateTime Time { get; init; }
 	public required int ReactionTicks { get; init; }
+	public required float ReactionMs { get; init; }
+	public required int TargetId { get; init; }
+	public required string Weapon { get; init; }
+	public required int Damage { get; init; }
+	public required TriggerContactMode Mode { get; init; }
 }
 
 internal sealed class TriggerSmoke
@@ -74,7 +79,7 @@ internal sealed class TriggerPlayerState
 	public readonly int[] LastContactTick = new int[AimbotDetector.MaxPlayers + 1];
 	public readonly List<TriggerCommand> Commands = new();
 	public readonly List<TriggerPendingAttack> Pending = new();
-	public readonly List<TriggerIncident> History = new();
+	public readonly List<TriggerIncident> Incidents = new();
 
 	public TriggerPlayerState()
 	{
@@ -91,13 +96,12 @@ internal sealed class TriggerPlayerState
 		Array.Fill(LastContactTick, -1);
 		Commands.Clear();
 		Pending.Clear();
-		History.Clear();
+		Incidents.Clear();
 	}
 }
 
 internal sealed class TriggerbotDetector
 {
-	private const int HistoryLimit = 30;
 	private const int PendingLimit = 8;
 	private const int FreshContactTicks = 64; // ~1 second at 64-tick
 	private const float HeldAngleMaximumDegrees = 0.5f;
@@ -414,30 +418,46 @@ internal sealed class TriggerbotDetector
 		if (ExcludedWeapons.Contains(normWeapon) || pendingMatch.ReactionTicks < 0)
 			return;
 
+		float reactionMs = pendingMatch.ReactionTicks * (1000.0f / 64.0f);
 		var now = DateTime.UtcNow;
-		st.History.RemoveAll(i => now - i.Time >= EvidenceWindow);
-		st.History.Add(new TriggerIncident { Time = now, ReactionTicks = pendingMatch.ReactionTicks });
+		st.Incidents.RemoveAll(i => now - i.Time >= EvidenceWindow);
 
-		while (st.History.Count > HistoryLimit)
-			st.History.RemoveAt(0);
-
-		var ticks = st.History.Select(h => h.ReactionTicks).ToList();
-		var (score, oneTick, twoTick, normal) = ScoreReactions(ticks);
-
-		_debug($"[Triggerbot] {Name(attacker)} recorded {pendingMatch.ReactionTicks}-tick damaging shot (score {score}/{_config.DetectionThreshold}, <=1t: {oneTick}, 2t: {twoTick}, normal: {normal}).");
-
-		if (score >= _config.DetectionThreshold)
+		if (pendingMatch.ReactionTicks <= _config.MaxReactionTicks)
 		{
-			StatDetections++;
-			string evidence =
-				$"Triggerbot: reaction score reached {score}/{_config.DetectionThreshold} across {st.History.Count} damaging shots.\n" +
-				$"Instant reactions (<=1 tick / <31ms): {oneTick}\n" +
-				$"Borderline reactions (2 ticks): {twoTick}\n" +
-				$"Normal human reactions (>=3 ticks): {normal}\n" +
-				$"Latest shot reaction: {pendingMatch.ReactionTicks} ticks ({pendingMatch.Mode}) dealing {damage} dmg with {weapon}.";
+			st.Incidents.Add(new TriggerIncident
+			{
+				Time = now,
+				ReactionTicks = pendingMatch.ReactionTicks,
+				ReactionMs = reactionMs,
+				TargetId = victim.PlayerID,
+				Weapon = normWeapon,
+				Damage = damage,
+				Mode = pendingMatch.Mode
+			});
 
-			_announce(attacker, "TRIGGERBOT", evidence);
-			st.History.Clear();
+			_debug($"[Triggerbot] {Name(attacker)} unnatural trigger reaction: {pendingMatch.ReactionTicks} ticks ({reactionMs:F1}ms, mode: {pendingMatch.Mode}) on #{victim.PlayerID} dealing {damage} dmg. Evidence: {st.Incidents.Count}/{_config.EvidenceThreshold}.");
+
+			if (st.Incidents.Count >= _config.EvidenceThreshold)
+			{
+				StatDetections++;
+				var lines = new List<string>();
+				for (int i = 0; i < st.Incidents.Count; i++)
+				{
+					var inc = st.Incidents[i];
+					lines.Add($"{i + 1}. {inc.ReactionTicks} ticks ({inc.ReactionMs:F1}ms) - {inc.Mode} ({inc.Weapon}, {inc.Damage} dmg)");
+				}
+
+				string latest = $"Latest damaging shot: fired {pendingMatch.ReactionTicks} ticks ({reactionMs:F1}ms) after crosshair target acquisition (mode: {pendingMatch.Mode}). Evidence {st.Incidents.Count}/{_config.EvidenceThreshold} in 5 min.";
+
+				string evidence = string.Join("\n", lines) + "\n" + latest;
+
+				_announce(attacker, "TRIGGERBOT", evidence);
+				st.Incidents.Clear();
+			}
+		}
+		else
+		{
+			_debug($"[Triggerbot] {Name(attacker)} normal human reaction: {pendingMatch.ReactionTicks} ticks ({reactionMs:F1}ms, mode: {pendingMatch.Mode}) on #{victim.PlayerID}.");
 		}
 	}
 
@@ -487,35 +507,6 @@ internal sealed class TriggerbotDetector
 		}
 
 		return (-1, trace.EndPos);
-	}
-
-	private static (int score, int oneTick, int twoTick, int normal) ScoreReactions(IReadOnlyList<int> ticks)
-	{
-		int score = 0;
-		int oneTick = 0;
-		int twoTick = 0;
-		int normal = 0;
-
-		foreach (int tick in ticks)
-		{
-			if (tick is >= 0 and <= 1)
-			{
-				oneTick++;
-				score += 2;
-			}
-			else if (tick == 2)
-			{
-				twoTick++;
-				score = Math.Max(0, score - 3);
-			}
-			else if (tick >= 3)
-			{
-				normal++;
-				score = Math.Max(0, score - 3);
-			}
-		}
-
-		return (score, oneTick, twoTick, normal);
 	}
 
 	private static bool SegmentTouchesSmokeBounds(in Vector start, in Vector end, in Vector center)

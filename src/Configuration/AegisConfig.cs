@@ -41,8 +41,11 @@ public sealed class TriggerbotConfig
 	[JsonConverter(typeof(JsonStringEnumConverter))]
 	public PunishmentType Punishment { get; set; } = PunishmentType.Ban;
 
-	[Description("Reaction score threshold required to flag triggerbot (default: 10).")]
-	public int DetectionThreshold { get; set; } = 10;
+	[Description("Number of unnatural triggerbot reaction incidents within 5 minutes required to punish (default: 3).")]
+	public int EvidenceThreshold { get; set; } = 3;
+
+	[Description("Maximum reaction ticks considered an unnatural triggerbot reaction (default: 3 ticks / ~46.8ms at 64-tick).")]
+	public int MaxReactionTicks { get; set; } = 3;
 }
 
 /// <summary>
