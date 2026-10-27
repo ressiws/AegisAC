@@ -103,11 +103,11 @@ internal sealed class AimlockPlayerData
 internal sealed class AimlockDetector
 {
 	public const int LagSearchRadius = 2;
-	private const int TrackingTicks = 128; // 2.0 seconds at 64-tick
+	private int TrackingTicks => Math.Max(16, (int)MathF.Round(_config.TrackingDurationSeconds * 64.0f));
 	private const int RearmTicks = 32;     // 0.5 seconds at 64-tick
 	private const float PlayerHalfWidth = 16.0f;
-	private const float MinimumDistance = 200.0f;
-	private const float MinimumTargetTravel = 128.0f;
+	private float MinimumDistance => _config.MinimumDistance;
+	private float MinimumTargetTravel => _config.MinimumTargetTravel;
 	private static readonly TimeSpan EvidenceWindow = TimeSpan.FromMinutes(5);
 	private static readonly float[] BodyHeights = [8.0f, 46.0f, 64.0f]; // Feet, Chest, Head
 
@@ -178,7 +178,7 @@ internal sealed class AimlockDetector
 		return Math.Max(0, (int)MathF.Round(rttSeconds * 64.0f + interpTicks));
 	}
 
-	private static bool MeasureTarget(
+	private bool MeasureTarget(
 		AimlockSample sample,
 		in TrackedPosition target,
 		int bodyPoint,

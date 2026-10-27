@@ -269,7 +269,16 @@ AegisAC configurations are stored in `addons/swiftlys2/configs/plugins/AegisAC/c
       "Punishment": "ban",
 
       // Number of aimlock tracking incidents within 5 minutes required to punish
-      "EvidenceThreshold": 3
+      "EvidenceThreshold": 3,
+
+      // Duration in seconds of uninterrupted mechanical tracking required for an aimlock episode (default: 2.0s)
+      "TrackingDurationSeconds": 2.0,
+
+      // Minimum distance in units between player and target to evaluate tracking (default: 200.0 units)
+      "MinimumDistance": 200.0,
+
+      // Minimum traversal in units the target must move across view to eliminate stationary false positives (default: 128.0 units)
+      "MinimumTargetTravel": 128.0
     },
 
     // Discord webhook notifications

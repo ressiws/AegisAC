@@ -62,6 +62,15 @@ public sealed class AimlockConfig
 
 	[Description("Number of sustained aimlock tracking incidents within 5 minutes required to punish (default: 3).")]
 	public int EvidenceThreshold { get; set; } = 3;
+
+	[Description("Duration in seconds of uninterrupted mechanical tracking required for an aimlock episode (default: 2.0s from legacy).")]
+	public float TrackingDurationSeconds { get; set; } = 2.0f;
+
+	[Description("Minimum distance in units between player and target to evaluate tracking (default: 200.0 units from legacy).")]
+	public float MinimumDistance { get; set; } = 200.0f;
+
+	[Description("Minimum traversal in units the target must move across view to eliminate stationary false positives (default: 128.0 units from legacy).")]
+	public float MinimumTargetTravel { get; set; } = 128.0f;
 }
 
 /// <summary>
