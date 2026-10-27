@@ -23,10 +23,29 @@ public sealed class AimbotConfig
 
 	[Description("Punishment applied when aimbot is detected: 'none', 'kick', or 'ban'.")]
 	[JsonConverter(typeof(JsonStringEnumConverter))]
-	public PunishmentType Punishment { get; set; } = PunishmentType.None;
+	public PunishmentType Punishment { get; set; } = PunishmentType.Ban;
 
 	[Description("Treat teammates as enemies (useful for deathmatch or FFA servers).")]
 	public bool TeammatesAreEnemies { get; set; } = false;
+}
+
+/// <summary>
+/// Configuration for the Triggerbot detection module.
+/// </summary>
+public sealed class TriggerbotConfig
+{
+	[Description("Enable or disable the triggerbot detection module.")]
+	public bool Enabled { get; set; } = true;
+
+	[Description("Punishment applied when triggerbot is detected: 'none', 'kick', or 'ban'.")]
+	[JsonConverter(typeof(JsonStringEnumConverter))]
+	public PunishmentType Punishment { get; set; } = PunishmentType.Ban;
+
+	[Description("Number of unnatural triggerbot reaction incidents within 5 minutes required to punish (default: 3).")]
+	public int EvidenceThreshold { get; set; } = 3;
+
+	[Description("Maximum reaction time in milliseconds considered an unnatural triggerbot reaction (default: 120ms).")]
+	public float MaxReactionTimeMs { get; set; } = 120.0f;
 }
 
 /// <summary>
@@ -57,6 +76,9 @@ public sealed class AegisConfig
 
 	[Description("Aimbot detector module configuration.")]
 	public AimbotConfig Aimbot { get; set; } = new();
+
+	[Description("Triggerbot detector module configuration.")]
+	public TriggerbotConfig Triggerbot { get; set; } = new();
 
 	[Description("Discord webhook notifications configuration.")]
 	public DiscordConfig Discord { get; set; } = new();

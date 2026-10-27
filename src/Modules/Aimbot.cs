@@ -1,3 +1,24 @@
+/**
+ * =============================================================================
+ * Aegis Anti-Cheat (AegisAC) - Module: Aimbot
+ *
+ * Copyright (C) 2026 swisser & sevon
+ * Authors:
+ *   - swisser (https://github.com/ressiws)
+ *   - sevon   (https://github.com/victor201202)
+ *
+ * Description:
+ *   Server-side aimbot detection module analyzing user command viewangle
+ *   convergence, single-tick snaps, and smooth trajectory envelopes
+ *   correlated with weapon fire and damage events.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at:
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * =============================================================================
+ */
+
 using AegisAC.Configuration;
 using SwiftlyS2.Shared.Natives;
 using SwiftlyS2.Shared.Players;
@@ -148,10 +169,20 @@ internal sealed class AimbotDetector
 	public static bool IsEligibleHuman(IPlayer? p) =>
 		p is { IsValid: true, IsFakeClient: false } && p.PlayerPawn is { IsValid: true };
 
-	private bool AreOpponents(int a, int b)
+	public bool AreOpponents(int a, int b)
 	{
 		bool aPlays = a == 2 || a == 3, bPlays = b == 2 || b == 3;
 		return aPlays && bPlays && (a != b || _settings.TeammatesAreEnemies);
+	}
+
+	public bool AreEnemies(int aId, int bId)
+	{
+		var pA = _getPlayer(aId);
+		var pB = _getPlayer(bId);
+		if (pA is null || pB is null) return false;
+		int teamA = pA.PlayerPawn?.TeamNum ?? 0;
+		int teamB = pB.PlayerPawn?.TeamNum ?? 0;
+		return AreOpponents(teamA, teamB);
 	}
 
 	public void OnProcessUsercmds(IPlayer player, List<SwiftlyS2.Shared.GameHooks.IUserCmd> cmds)
@@ -414,10 +445,10 @@ internal sealed class AimbotDetector
 		_debug($"{Name(player)} weapon_fire matched command {command.CommandNumber}, server tick {command.ServerTick}, fire tick {currentTick}.");
 	}
 
-	public void OnPlayerHurt(IPlayer attacker, IPlayer victim, string weapon, int currentTick)
+	public int? OnPlayerHurt(IPlayer attacker, IPlayer victim, string weapon, int currentTick)
 	{
 		if (!_settings.Enabled || !IsEligibleHuman(attacker) || !victim.IsValid || attacker.PlayerID == victim.PlayerID)
-			return;
+			return null;
 
 		if (weapon.StartsWith("weapon_", StringComparison.Ordinal))
 			weapon = weapon[7..];
@@ -427,7 +458,7 @@ internal sealed class AimbotDetector
 		if (!BallisticWeapons.Contains(weapon))
 		{
 			_debug($"{Name(attacker)} hurt ignored: weapon '{weapon}' is not ballistic.");
-			return;
+			return null;
 		}
 
 		var st = _players[attacker.PlayerID];
@@ -442,7 +473,7 @@ internal sealed class AimbotDetector
 		{
 			StatHurtNoMatch++;
 			_debug($"{Name(attacker)} hurt unmatched: {candidates.Length} registered shots at tick {currentTick}.");
-			return;
+			return null;
 		}
 
 		var shot = candidates[0];
@@ -472,6 +503,7 @@ internal sealed class AimbotDetector
 		_debug($"{Name(attacker)} correlated damage with shot command {command.CommandNumber}, server tick {command.ServerTick}, fire tick {shot.FireTick}.");
 
 		Evaluate(attacker, st, command.ServerTick);
+		return command.CommandNumber;
 	}
 
 	private readonly record struct SmoothPoint(AimCommand Command, float Error);

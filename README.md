@@ -98,13 +98,45 @@ The Aimbot detector inspects user commands, view angles, weapon fire correlation
 
 </details>
 
+<details open>
+<summary><b>Active Module: Triggerbot Detection (Click to collapse/expand)</b></summary>
+<br/>
+
+The Triggerbot detector inspects real-time crosshair raycast targeting, sub-tick reaction latencies, angle-holding behavior, and smoke boundary occlusion.
+
+### Detection Methods
+
+1. **Sub-Tick Reaction Timing Analysis**
+   - **How it works:** Tracks when an enemy enters the player's crosshair (both aim-driven flicks and target-driven angle holds). Compares the exact target acquisition command to the sub-tick command where the weapon discharged.
+   - **Trigger Condition:** Reaction latency ≤ `MaxReactionTimeMs` (default: ≤ 120ms / ~7-8 ticks at 64-tick), which is physically impossible for human visual recognition response.
+
+2. **3-Incident Evidence System**
+   - **How it works:** Follows the same evidence-based structure as Aimbot. Each verified damaging shot with unnatural reaction latency records 1 triggerbot incident.
+   - **Trigger Condition:** Accumulating `EvidenceThreshold` (default: 3) verified incidents within a 5-minute sliding window triggers the configured punishment.
+
+3. **Smoke Occlusion & Safety Monitoring**
+   - **How it works:** Dynamically tracks smoke grenade detonation coordinates and volumetric boundaries. Automatically discards shots through active smokes or during uncertain map-load smoke states to prevent false flags through visual volumetric boundaries.
+
+### Strictness Rating
+
+| Metric | Setting / Behavior |
+| :--- | :--- |
+| **Strictness Level** | **Conservative (High Precision)** |
+| **Evidence Window** | 5 Minutes (Sliding) |
+| **Evidence Threshold** | 3 Verified Damaging Incidents required |
+| **Max Reaction Timing** | ≤ 120ms (~7-8 Ticks at 64-tick) |
+| **Damage Gate** | Active — evaluated strictly upon confirmed `player_hurt` events |
+| **Smoke Exclusion** | Active — automated ray-box smoke volume intersection check |
+
+</details>
+
 <details>
 <summary><b>Planned Modules (Roadmap)</b></summary>
 <br/>
 
 - **Anti-Untrusted / Impossible Angles:** Flags invalid view angles (out-of-bounds Pitch, Yaw, Roll, NaN/Infinity exploits). *(Strictness: Aggressive / Instant)*
-- **Triggerbot / Instant Reaction Detection:** Flags sub-human reaction latencies across multiple engagements. *(Strictness: Moderate)*
-- **Movement / Anti-Bhop** Detects automated jump timing and duck-spam movement scripts. *(Strictness: Moderate)*
+- **Movement / Anti-Bhop & Duck-Spam:** Detects automated jump timing, scroll-wheel automation, and desync duck-spam movement scripts. *(Strictness: Moderate)*
+- **Dormant ESP / Server-Side Visibility Culling:** Suppresses network transmission of dormant enemy player pawns behind walls. *(Strictness: Active Mitigation)*
 
 </details>
 
@@ -181,6 +213,21 @@ AegisAC configurations are stored in `addons/swiftlys2/configs/plugins/AegisAC/c
       "TeammatesAreEnemies": false
     },
 
+    // Triggerbot detection module configuration
+    "Triggerbot": {
+      // Enable or disable triggerbot detection
+      "Enabled": true,
+
+      // Punishment applied upon detection: "none", "kick", or "ban"
+      "Punishment": "ban",
+
+      // Number of unnatural triggerbot reaction incidents within 5 minutes required to punish
+      "EvidenceThreshold": 3,
+
+      // Maximum reaction time in milliseconds considered an unnatural triggerbot reaction (default: 120ms)
+      "MaxReactionTimeMs": 120.0
+    },
+
     // Discord webhook notifications
     "Discord": {
       // Enable or disable Discord alert embeds
@@ -203,6 +250,7 @@ All commands can be executed via the server console or in-game by authorized adm
 | :--- | :--- | :--- | :--- |
 | `aegis_reload` | `aegisreload` | `@css/root` | Reloads `config.jsonc` dynamically without restarting the server. |
 | `aimbot_status` | — | `@css/root` | Prints real-time aimbot detector statistics and buffers (active only when `Debug: true` in config). |
+| `triggerbot_status` | — | `@css/root` | Prints real-time triggerbot detector statistics and active smokes (active only when `Debug: true` in config). |
 
 ---
 

@@ -1,3 +1,23 @@
+/**
+ * =============================================================================
+ * Aegis Anti-Cheat (AegisAC) - Module: AimMath
+ *
+ * Copyright (C) 2026 swisser & sevon
+ * Authors:
+ *   - swisser (https://github.com/ressiws)
+ *   - sevon   (https://github.com/victor201202)
+ *
+ * Description:
+ *   Mathematical and geometric utilities for angle transformations,
+ *   vector forward projections, angular distance, and trajectory calculations.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at:
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * =============================================================================
+ */
+
 using SwiftlyS2.Shared.Natives;
 
 namespace AegisAC;
