@@ -1,108 +1,300 @@
-# AegisAC
+<div align="center">
 
 <p align="center">
-  <img src=".github/assets/banner.jpg" alt="AegisAC Banner" width="100%">
+  <img src="https://raw.githubusercontent.com/ressiws/AegisAC/main/.github/assets/banner.jpg" alt="AegisAC Feature Showcase" width="750" onerror="this.onerror=null" />
 </p>
 
-<p align="center">
-  <strong>Detect. Verify. Protect.</strong>
-  <br>
-  Server-side anti-cheat for Counter-Strike 2, built with SwiftlyS2.
-</p>
+# AegisAC (Aegis Anti-Cheat)
 
-<p align="center">
-  <img src="https://img.shields.io/badge/status-early%20development-orange.svg" alt="Status: Early Development">
-  <img src="https://img.shields.io/badge/Counter--Strike-2-orange.svg" alt="Counter-Strike 2">
-  <img src="https://img.shields.io/badge/.NET-10.0-512BD4.svg" alt=".NET 10">
-  <img src="https://img.shields.io/badge/SwiftlyS2-1.5.0-blue.svg" alt="SwiftlyS2 1.5.0">
-</p>
+**A Server-Sided Anti-Cheat for Counter-Strike 2 built with Swiflys2**
+
+[![Platform](https://img.shields.io/badge/Platform-Counter--Strike%202-blue.svg?style=for-the-badge&logo=counter-strike)](https://store.steampowered.com/app/730/CounterStrike_2/)
+[![Framework](https://img.shields.io/badge/Framework-SwiftlyS2-orange.svg?style=for-the-badge)](https://swiftlys2.net)
+[![Runtime](https://img.shields.io/badge/.NET-10.0-purple.svg?style=for-the-badge&logo=dotnet)](https://dotnet.microsoft.com/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](LICENSE)
+
+<br/>
+
+*A high-performance, non-intrusive server-side anti-cheat built with modern C# on the SwiftlyS2 framework. Detects aim assistance, abnormal angle convergence, and snaps without requiring any client-side software.*
 
 ---
 
-## Overview
+</div>
 
-AegisAC is an open-source, server-side anti-cheat for Counter-Strike 2, built on SwiftlyS2.
+## 📌 Table of Contents
 
-The project aims to detect suspicious player behavior through server-side analysis, starting with aim-related detection and an extensible module architecture.
+- [Overview](#-overview)
+- [Key Features](#-key-features)
+- [Detection Modules & Strictness](#-detection-modules--strictness)
+- [Quick Start](#-quick-start)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Building from Source](#building-from-source)
+- [Configuration Reference](#-configuration-reference)
+- [Server Commands](#-server-commands)
+- [Discord Webhook Notifications](#-discord-webhook-notifications)
+- [Frequently Asked Questions (FAQ)](#-frequently-asked-questions-faq)
+- [Contributing](#-contributing)
+- [License](#-license)
 
-> **Note:** AegisAC is in early development. Detection systems are experimental and require live-server testing before they can be considered reliable.
+---
 
-## Current Features
+## 📖 Overview
 
-- **Modular Architecture** — Dedicated anti-cheat modules with centralized loading and unloading.
-- **Aimbot Detection** — Initial detection logic analyzing player aim angles.
-- **Server-Side Analysis** — Uses server-observed player data through SwiftlyS2 hooks.
-- **Extensible Design** — Structured to support additional detection modules as development progresses.
+**AegisAC** provides servers with robust, automated detection against aimbots and unnatural aiming mechanics in Counter-Strike 2. Unlike invasive kernel-level drivers or third-party client anti-cheats, AegisAC runs **strictly on the server**:
 
-## Design Principles
+- **Zero Client Overhead:** Players do not need to download or install background software.
+- **Sub-Tick Phase Aware:** Designed from the ground up to operate seamlessly with CS2's usercmd and sub-tick architecture.
+- **Evidence-Based Sanctions:** Punishments are only executed when multiple, high-confidence evidence points are collected across a sliding time window, mitigating false positives.
+- **Extensible Architecture:** Modular design allowing server owners to select independent punishment types (`ban`, `kick`, or `none`) for each detection module.
 
-- **Server-side** — Analyze player behavior using server-observed data.
-- **Evidence-driven** — Develop detection logic based on measurable behavior rather than assumptions.
-- **Modular** — Keep detection systems independent and maintainable.
-- **Reliable** — Prioritize accuracy and minimize false positives.
-- **Open source** — Keep the implementation available for inspection and community contributions.
+---
 
-## Technology Stack
+## ✨ Key Features
 
-| Technology | Purpose |
-| --- | --- |
-| C# | Core implementation |
-| .NET 10 | Runtime and framework |
-| SwiftlyS2 | Counter-Strike 2 server integration |
+- **🎯 Advanced Trajectory & Angle Math:** Employs forward vector trigonometry, angular distance delta checking, and historical position reconciliation to detect instantaneous snaps and unnatural aimbot movement.
+- **🔄 Sub-Tick & Phase-Compensated Correlator:** Reliably pairs `weapon_fire` and `player_hurt` events with exact user commands, compensating for client tick gaps and engine phase shifts.
+- **⚖️ Modular Punishment System:** Configure punishments per module (`ban`, `kick`, `none`) with custom command templates supporting placeholders (`{userid}`, `{steamid}`, `{name}`, `{reason}`).
+- **🔔 Discord Webhook Integration:** Instant, rich embed alerts dispatched asynchronously to your staff Discord channel when a player is flagged, kicked, or banned.
+- **⚡ Hot Reloading & Live Config:** Reload configurations instantaneously during live gameplay with the `aegis_reload` command without restarting the server or kicking players.
+- **🔍 Unified Diagnostic Mode:** Single global debug mode across the entire plugin for clean console logs and transparent troubleshooting.
 
-## Getting Started
+---
 
-### Requirements
+## 🛡️ Detection Modules & Strictness
 
-- Counter-Strike 2 dedicated server
-- SwiftlyS2
-- .NET 10 SDK for development
-- A compatible server environment
+AegisAC is designed with a **low false-positive** philosophy. The table below outlines active and planned modules along with their detection mechanics and strictness levels.
+
+<details open>
+<summary><b>Active Module: Aimbot Detection (Click to collapse/expand)</b></summary>
+<br/>
+
+The Aimbot detector inspects user commands, view angles, weapon fire correlation, and player damage to identify automated targeting mechanics.
+
+### Detection Methods
+
+1. **Convergence Snap Detection**
+   - **How it works:** Analyzes the angular delta between the player's view angles before and after a shot. If the aim jumps directly toward an enemy's exact hitboxes in a single tick (e.g. > 10° snap onto target), it is flagged as convergence.
+   - **Trigger Condition:** Shot must inflict confirmed damage (`player_hurt`), target distance must exceed `100.0` game units, and aim must resolve directly onto enemy position.
+
+2. **Snap-Return Detection**
+   - **How it works:** Detects "silent" or snap-return aimbots that jump onto a target to fire a lethal shot and immediately snap back to the previous view angle within adjacent ticks.
+   - **Trigger Condition:** Single-command angular jump onto the enemy followed by an immediate return to prior view angles.
+
+3. **Smooth Convergence Detection**
+   - **How it works:** Identifies mathematical curve-smoothing aimbots. Evaluates path efficiency, angular step consistency, and final terminal error against calibrated human aiming envelopes.
+   - **Trigger Condition:** Step efficiency ≥ 94% with progressive angular improvement terminating under 1.0° from target center.
+
+### Strictness Rating
+
+| Metric | Setting / Behavior |
+| :--- | :--- |
+| **Strictness Level** | **Conservative (High Precision)** |
+| **Evidence Window** | 5 Minutes (Sliding) |
+| **Evidence Threshold** | 3 Verified Damaging Incidents required |
+| **Damage Gate** | Active — shots that miss or do zero damage never accumulate incident counts |
+| **Distance Gate** | Active — point-blank combat (< 100 units) is excluded from snap calculation |
+| **False-Positive Profile** | Highly resilient against legitimate high-sensitivity flicks and swipe resets |
+
+</details>
+
+<details>
+<summary><b>Planned Modules (Roadmap)</b></summary>
+<br/>
+
+- **Anti-Untrusted / Impossible Angles:** Flags invalid view angles (out-of-bounds Pitch, Yaw, Roll, NaN/Infinity exploits). *(Strictness: Aggressive / Instant)*
+- **Triggerbot / Instant Reaction Detection:** Flags sub-human reaction latencies across multiple engagements. *(Strictness: Moderate)*
+- **Movement / Anti-Bhop** Detects automated jump timing and duck-spam movement scripts. *(Strictness: Moderate)*
+
+</details>
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Counter-Strike 2 Dedicated Server.
+- [.NET 10.0 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) installed on the host machine.
+- [SwiftlyS2 Framework](https://swiftlys2.net/) (v1.1.6 or newer) installed in `game/csgo/addons/swiftlys2`.
 
 ### Installation
 
-AegisAC is currently under development. Installation instructions will be added when a usable release is available.
+1. Download the latest release `.zip` from the [Releases](https://github.com/swisser/AegisAC/releases) page.
+2. Extract the archive into your server's plugin directory:
+   ```
+   game/csgo/addons/swiftlys2/plugins/AegisAC/
+   ```
+3. Start or restart your server. SwiftlyS2 will automatically detect and load `AegisAC.dll`.
+4. On first load, AegisAC automatically generates the default configuration file:
+   ```
+   game/csgo/addons/swiftlys2/configs/plugins/AegisAC/config.jsonc
+   ```
 
-### Development
+### Building from Source
 
-Clone the repository:
+To compile the plugin locally:
 
 ```bash
-git clone https://github.com/ressiws/AegisAC.git
+# Clone the repository
+git clone https://github.com/swisser/AegisAC.git
 cd AegisAC
+
+# Build in Release configuration
+dotnet build -c Release
+
+# Package and publish
+dotnet publish -c Release
 ```
 
-Open the solution in your preferred C# IDE and build the project using the repository's configured build process.
-
-## Roadmap
-
-### In Progress
-
-- [x] Modular anti-cheat architecture
-- [x] Initial aimbot detection module
-- [ ] Live-server validation and detection tuning
-- [ ] False-positive evaluation
-
-### Planned
-
-- [ ] Additional detection modules
-- [ ] Configurable detection thresholds
-- [ ] Configurable punishment policies
-- [ ] Improved detection logging and diagnostics
-- [ ] Documentation and release packages
-
-## Contributing
-
-Contributions, bug reports, and feature suggestions are welcome.
-
-Please open an issue before starting major changes so the proposed approach can be discussed.
-
-## License
-
-See the [LICENSE](LICENSE) file for licensing information.
+The compiled binaries will be output to `build/publish/AegisAC/`.
 
 ---
 
-<p align="center">
-  <strong>AegisAC — Detect. Verify. Protect.</strong>
-</p>
+## ⚙️ Configuration Reference
+
+AegisAC configurations are stored in `addons/swiftlys2/configs/plugins/AegisAC/config.jsonc`. The file supports comments (`//`) and auto-populates missing keys on server startup.
+
+```jsonc
+{
+  "AegisAC": {
+    // Global debug mode for Aegis Anti-Cheat. Enables verbose diagnostic logs in server console.
+    "Debug": false,
+
+    // Command executed when kicking a player.
+    // Available placeholders: {userid}, {steamid}, {name}, {reason}
+    "KickCommand": "kickid {userid} \"[AegisAC] {reason}\"",
+
+    // Command executed when banning a player.
+    // Available placeholders: {userid}, {steamid}, {name}, {reason}
+    "BanCommand": "banid 0 {steamid}; writeid; kickid {userid} \"[AegisAC] {reason}\"",
+
+    // Aimbot detection module configuration
+    "Aimbot": {
+      // Enable or disable aimbot detection
+      "Enabled": true,
+
+      // Punishment applied upon detection: "none", "kick", or "ban"
+      "Punishment": "none",
+
+      // Treat teammates as enemies (useful for FFA / Deathmatch servers)
+      "TeammatesAreEnemies": false
+    },
+
+    // Discord webhook notifications
+    "Discord": {
+      // Enable or disable Discord alert embeds
+      "Enabled": false,
+
+      // Discord webhook URL to send detection notifications
+      "WebhookUrl": "https://discord.com/api/webhooks/YOUR_WEBHOOK_URL_HERE"
+    }
+  }
+}
+```
+
+---
+
+## 💻 Server Commands
+
+All commands can be executed via the server console or in-game by authorized administrators (`@css/root`).
+
+| Command | Aliases | Permission | Description |
+| :--- | :--- | :--- | :--- |
+| `aegis_reload` | `aegisreload` | `@css/root` | Reloads `config.jsonc` dynamically without restarting the server. |
+| `aimbot_status` | — | `@css/root` | Prints real-time aimbot detector statistics and buffers (active only when `Debug: true` in config). |
+
+---
+
+## 🔔 Discord Webhook Notifications
+
+AegisAC features native **Discord Components V2** webhook alerts with structured containers, dynamic accent colors, markdown formatting, and incident telemetry:
+
+```
+┌────────────────────────────────────────────────────────┐
+│ 🛡️ Aegis Anti-Cheat  APP                               │
+│ CS2 · Server-Sided Protection                          │
+│ ────────────────────────────────────────────────────── │
+│ 🚨 CHEATER DETECTED                                    │
+│ Player Swisser has been flagged by Aegis Anti-Cheat.   │
+│ ────────────────────────────────────────────────────── │
+│ Player Information                                     │
+│ PLAYER: Swisser                                        │
+│ STEAM ID: 76561198...                                  │
+│ MODULE: Aimbot                                         │
+│ ────────────────────────────────────────────────────── │
+│ Detection & Action                                     │
+│ DETECTION: AIMBOT                                      │
+│ ACTION TAKEN: 🔴 BANNED                                │
+│ ────────────────────────────────────────────────────── │
+│ 📊 Incident Evidence                                   │
+│ 1. 47.52° sudden move (10.86° → 1.62°)                 │
+│ 2. 82.14° sudden move (14.20° → 0.95°)                 │
+│ 3. 123.28° sudden move (18.40° → 0.81°)                │
+│ ────────────────────────────────────────────────────── │
+│ AEGIS ANTI-CHEAT FOR CS2 · SERVER-SIDED PROTECTION     │
+└────────────────────────────────────────────────────────┘
+```
+
+- **Non-blocking:** Embeds are dispatched in an asynchronous background worker pool, guaranteeing zero frame drops or lag spikes on the game thread.
+- **Color-Coded:** Red for Bans, Orange for Kicks, Gold/Yellow for Logged alerts.
+- **Steam Profile Links:** Direct clickable links to the flagged player's Steam Community profile.
+
+---
+
+## ❓ Frequently Asked Questions (FAQ)
+
+<details>
+<summary><b>Does AegisAC require any client downloads or VAC-incompatible binaries?</b></summary>
+<br/>
+No. AegisAC is 100% server-sided. It operates purely on user commands and entity state data sent by the standard CS2 client. It does not tamper with client memory, DLLs, or VAC.
+</details>
+
+<details>
+<summary><b>How does AegisAC handle CS2's Sub-Tick mechanics?</b></summary>
+<br/>
+CS2 usercmds include historical attack viewangles and sub-tick timestamps. AegisAC reconciles these timestamps during `ProcessUsercmds` and movement simulation (`SetupMove`), compensating for client-tick gaps and phase differences before evaluating aim trajectories.
+</details>
+
+<details>
+<summary><b>Can legitimate players with high DPI or flick aim get false-banned?</b></summary>
+<br/>
+No. AegisAC requires **3 separate damaging incidents within a 5-minute window** to trigger a punishment. Random fast flicks or crosshair adjustments that do not resolve into unnatural single-tick hitbox convergence accompanied by confirmed damage are filtered out.
+</details>
+
+<details>
+<summary><b>Can I test detections without automatically banning players?</b></summary>
+<br/>
+Yes! Simply set `"Punishment": "none"` in your `config.jsonc`. Detections will still be announced in the console and sent to your Discord webhook without taking action against the player.
+</details>
+
+<details>
+<summary><b>Does AegisAC cause server lag or drop tick rate?</b></summary>
+<br/>
+No. All player command buffers and position frames are stored in fixed-size circular arrays, and computationally heavy operations (such as HTTP Discord webhooks) run completely off the game thread.
+</details>
+
+---
+
+## 🤝 Contributing
+
+Contributions, bug reports, and suggestions are welcome!
+
+1. **Reporting Issues:** If you encounter unexpected behavior or want to suggest an improvement, please open an issue on the GitHub Issues page.
+2. **Submitting Pull Requests:**
+   - Fork the repository and create your feature branch: `git checkout -b feature/my-feature`.
+   - Maintain the existing code style: **C# 13**, strictly in **English**, with meaningful docstrings and zero unnecessary comments.
+   - Verify that your changes build cleanly with `dotnet build`.
+   - Commit and submit a Pull Request describing your modifications.
+
+---
+
+## 📄 License & Attribution
+
+This project is licensed under the **[Apache License 2.0](LICENSE)**.
+
+### Attribution Requirement
+Under Section 4 of the Apache 2.0 license and the accompanying [`NOTICE`](NOTICE) file, any redistribution, modification, fork, or inclusion of this project must:
+1. Retain all original copyright, patent, trademark, and attribution notices.
+2. Prominently display attribution and credit to the original authors (**swisser & sevon**).
+3. State any modifications made to the source files.
