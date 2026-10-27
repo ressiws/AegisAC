@@ -26,6 +26,7 @@ using AegisAC.Configuration;
 using SwiftlyS2.Shared.Natives;
 using SwiftlyS2.Shared.Players;
 using SwiftlyS2.Shared.Services;
+using SwiftlyS2.Shared.Trace;
 
 namespace AegisAC.Modules;
 
@@ -241,13 +242,17 @@ internal sealed class TriggerbotDetector
 		if (id < 1 || id >= _players.Length)
 			return;
 
-		var st = _players[id];
-		var cmd = st.Commands.FindLast(c => c.CommandNumber == commandNumber);
-		if (cmd == null)
+		var pawn = player.PlayerPawn;
+		if (pawn is null)
 			return;
 
-		QAngle viewAngles = cmd.Angles;
-		bool isFreshAttack = cmd.IsFreshAttack;
+		var st = _players[id];
+		var cmd = st.Commands.FindLast(c => c.CommandNumber == commandNumber);
+		if (cmd == null && commandNumber <= st.LastCommandNumber)
+			return;
+
+		QAngle viewAngles = cmd != null ? cmd.Angles : pawn.EyeAngles;
+		bool isFreshAttack = cmd != null && cmd.IsFreshAttack;
 
 		if (commandNumber <= st.LastCommandNumber)
 			return;
@@ -266,10 +271,6 @@ internal sealed class TriggerbotDetector
 			st.ContactStartCommand = -1;
 			return;
 		}
-
-		var pawn = player.PlayerPawn;
-		if (pawn is null)
-			return;
 
 		Vector origin = pawn.AbsOrigin ?? default;
 		Vector eye = pawn.EyePosition ?? new Vector(origin.X, origin.Y, origin.Z + 64.0f);
@@ -345,6 +346,40 @@ internal sealed class TriggerbotDetector
 		st.LastAnglesValid = true;
 	}
 
+	public void OnWeaponFire(IPlayer player, string weapon, int currentTick)
+	{
+		if (!_config.Enabled || !AimbotDetector.IsEligibleHuman(player))
+			return;
+
+		int id = player.PlayerID;
+		if (id < 1 || id >= _players.Length)
+			return;
+
+		var st = _players[id];
+		if (st.ActiveTarget < 1 || st.ContactStartCommand < 0)
+			return;
+
+		int cmdNum = st.LastCommandNumber >= 0 ? st.LastCommandNumber : currentTick;
+		int reactionTicks = Math.Max(0, cmdNum - st.ContactStartCommand);
+
+		if (!st.Pending.Any(p => p.CommandNumber == cmdNum))
+		{
+			st.Pending.Add(new TriggerPendingAttack
+			{
+				CommandNumber = cmdNum,
+				TargetIndex = st.ActiveTarget,
+				ReactionTicks = reactionTicks,
+				Mode = st.ActiveMode
+			});
+
+			while (st.Pending.Count > PendingLimit)
+				st.Pending.RemoveAt(0);
+
+			StatPendingAttacks++;
+			_debug($"[Triggerbot] {Name(player)} weapon_fire registered reaction: {reactionTicks} ticks on target #{st.ActiveTarget}.");
+		}
+	}
+
 	public void OnPlayerHurt(IPlayer attacker, IPlayer victim, string weapon, int damage, int? commandNumber)
 	{
 		if (!_config.Enabled || !AimbotDetector.IsEligibleHuman(attacker) || !victim.IsValid || damage <= 0)
@@ -360,7 +395,8 @@ internal sealed class TriggerbotDetector
 		{
 			pendingMatch = st.Pending.FirstOrDefault(p => p.CommandNumber == commandNumber.Value);
 		}
-		else
+
+		if (pendingMatch == null)
 		{
 			pendingMatch = st.Pending.LastOrDefault(p => p.TargetIndex == victim.PlayerID);
 		}
@@ -407,16 +443,28 @@ internal sealed class TriggerbotDetector
 
 	private (int TargetIndex, Vector HitPoint) TraceCrosshair(IPlayer player, in Vector eye, in QAngle angles)
 	{
+		var pawn = player.PlayerPawn;
+		if (pawn is null)
+			return (-1, Vector.Zero);
+
 		Vector forward = AimMath.Forward(angles);
 		Vector end = new(
 			eye.X + forward.X * TraceLength,
 			eye.Y + forward.Y * TraceLength,
 			eye.Z + forward.Z * TraceLength);
 
-		var trace = _traceManager.TraceShapeLine(eye, end, null);
+		var traceParams = new TraceParams
+		{
+			InteractWith = MaskTrace.Solid | MaskTrace.Hitbox | MaskTrace.Player,
+			EntitiesToIgnore = [pawn],
+			ShouldHitEntity = ent => ent != null && ent.Index != pawn.Index && ent.Address != pawn.Address
+		};
+
+		var trace = _traceManager.TraceShapeLine(eye, end, traceParams);
 		if (!trace.DidHit || trace.Entity == null)
 			return (-1, Vector.Zero);
 
+		uint hitIndex = trace.Entity.Index;
 		nint hitAddress = trace.Entity.Address;
 
 		for (int i = 1; i <= AimbotDetector.MaxPlayers; i++)
@@ -426,7 +474,10 @@ internal sealed class TriggerbotDetector
 				continue;
 
 			var targetPawn = target.PlayerPawn;
-			if (targetPawn is null || targetPawn.Address != hitAddress)
+			if (targetPawn is null)
+				continue;
+
+			if (targetPawn.Index != hitIndex && targetPawn.Address != hitAddress)
 				continue;
 
 			if (!target.IsAlive || !_areEnemies(player.PlayerID, target.PlayerID))

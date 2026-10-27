@@ -23,7 +23,7 @@ public sealed class AimbotConfig
 
 	[Description("Punishment applied when aimbot is detected: 'none', 'kick', or 'ban'.")]
 	[JsonConverter(typeof(JsonStringEnumConverter))]
-	public PunishmentType Punishment { get; set; } = PunishmentType.None;
+	public PunishmentType Punishment { get; set; } = PunishmentType.Ban;
 
 	[Description("Treat teammates as enemies (useful for deathmatch or FFA servers).")]
 	public bool TeammatesAreEnemies { get; set; } = false;
@@ -39,7 +39,7 @@ public sealed class TriggerbotConfig
 
 	[Description("Punishment applied when triggerbot is detected: 'none', 'kick', or 'ban'.")]
 	[JsonConverter(typeof(JsonStringEnumConverter))]
-	public PunishmentType Punishment { get; set; } = PunishmentType.None;
+	public PunishmentType Punishment { get; set; } = PunishmentType.Ban;
 
 	[Description("Reaction score threshold required to flag triggerbot (default: 10).")]
 	public int DetectionThreshold { get; set; } = 10;

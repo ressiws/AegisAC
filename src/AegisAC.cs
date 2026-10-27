@@ -135,6 +135,10 @@ public sealed class AegisAC : BasePlugin
 				player,
 				e.Weapon ?? "",
 				CurrentTick);
+			_triggerbot.OnWeaponFire(
+				player,
+				e.Weapon ?? "",
+				CurrentTick);
 		}
 
 		return HookResult.Continue;
