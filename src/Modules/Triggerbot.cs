@@ -261,7 +261,7 @@ internal sealed class TriggerbotDetector
 		if (commandNumber <= st.LastCommandNumber)
 			return;
 
-		if (st.LastCommandNumber >= 0 && commandNumber != st.LastCommandNumber + 1)
+		if (st.LastCommandNumber >= 0 && commandNumber - st.LastCommandNumber > 16)
 		{
 			st.ActiveTarget = -1;
 			st.ContactStartCommand = -1;
@@ -291,18 +291,14 @@ internal sealed class TriggerbotDetector
 
 			if (targetIndex >= 1)
 			{
-				int previousContact = st.LastContactTick[targetIndex];
-				if (previousContact < 0 || currentTick - previousContact >= FreshContactTicks)
-				{
-					st.ContactStartCommand = commandNumber;
-					float aimMovement = st.LastAnglesValid ? AimMath.AngularDistance(st.LastAngles, viewAngles) : 0.0f;
-					st.ActiveMode = float.IsFinite(aimMovement) && aimMovement > HeldAngleMaximumDegrees
-						? TriggerContactMode.AimDriven
-						: TriggerContactMode.TargetDriven;
+				st.ContactStartCommand = commandNumber;
+				float aimMovement = st.LastAnglesValid ? AimMath.AngularDistance(st.LastAngles, viewAngles) : 0.0f;
+				st.ActiveMode = float.IsFinite(aimMovement) && aimMovement > HeldAngleMaximumDegrees
+					? TriggerContactMode.AimDriven
+					: TriggerContactMode.TargetDriven;
 
-					StatAcquisitions++;
-					_debug($"[Triggerbot] {Name(player)} acquired target #{targetIndex} (mode: {st.ActiveMode}, cmd: {commandNumber}).");
-				}
+				StatAcquisitions++;
+				_debug($"[Triggerbot] {Name(player)} acquired target #{targetIndex} (mode: {st.ActiveMode}, cmd: {commandNumber}).");
 			}
 		}
 
@@ -360,18 +356,35 @@ internal sealed class TriggerbotDetector
 			return;
 
 		var st = _players[id];
-		if (st.ActiveTarget < 1 || st.ContactStartCommand < 0)
+		int targetIndex = st.ActiveTarget;
+		int contactStart = st.ContactStartCommand;
+
+		if (targetIndex < 1)
+		{
+			// Check if contact was lost within the last 2 ticks due to weapon recoil punch
+			for (int t = 1; t <= AimbotDetector.MaxPlayers; t++)
+			{
+				if (st.LastContactTick[t] >= 0 && currentTick - st.LastContactTick[t] <= 2)
+				{
+					targetIndex = t;
+					contactStart = st.ContactStartCommand >= 0 ? st.ContactStartCommand : st.LastCommandNumber - (currentTick - st.LastContactTick[t]);
+					break;
+				}
+			}
+		}
+
+		if (targetIndex < 1 || contactStart < 0)
 			return;
 
 		int cmdNum = st.LastCommandNumber >= 0 ? st.LastCommandNumber : currentTick;
-		int reactionTicks = Math.Max(0, cmdNum - st.ContactStartCommand);
+		int reactionTicks = Math.Max(0, cmdNum - contactStart);
 
 		if (!st.Pending.Any(p => p.CommandNumber == cmdNum))
 		{
 			st.Pending.Add(new TriggerPendingAttack
 			{
 				CommandNumber = cmdNum,
-				TargetIndex = st.ActiveTarget,
+				TargetIndex = targetIndex,
 				ReactionTicks = reactionTicks,
 				Mode = st.ActiveMode
 			});
@@ -380,7 +393,7 @@ internal sealed class TriggerbotDetector
 				st.Pending.RemoveAt(0);
 
 			StatPendingAttacks++;
-			_debug($"[Triggerbot] {Name(player)} weapon_fire registered reaction: {reactionTicks} ticks on target #{st.ActiveTarget}.");
+			_debug($"[Triggerbot] {Name(player)} weapon_fire registered reaction: {reactionTicks} ticks on target #{targetIndex}.");
 		}
 	}
 
@@ -475,17 +488,50 @@ internal sealed class TriggerbotDetector
 
 		var traceParams = new TraceParams
 		{
-			InteractWith = MaskTrace.Solid | MaskTrace.Hitbox | MaskTrace.Player,
-			EntitiesToIgnore = [pawn],
-			ShouldHitEntity = ent => ent != null && ent.Index != pawn.Index && ent.Address != pawn.Address
+			InteractWith = MaskTrace.Solid | MaskTrace.Hitbox | MaskTrace.Player |
+			               MaskTrace.CsgoTeam1 | MaskTrace.CsgoTeam2 |
+			               MaskTrace.CsgoMonster | MaskTrace.CsgoMoveable | MaskTrace.Window,
+			EntitiesToIgnore = [pawn]
 		};
 
 		var trace = _traceManager.TraceShapeLine(eye, end, traceParams);
-		if (!trace.DidHit || trace.Entity == null)
-			return (-1, Vector.Zero);
+		float maxDistance = (trace.DidHit && trace.Distance > 0.0f) ? trace.Distance : TraceLength;
 
-		uint hitIndex = trace.Entity.Index;
-		nint hitAddress = trace.Entity.Address;
+		// 1. Direct native trace hit check
+		if (trace.DidHit && trace.Entity != null)
+		{
+			uint hitIndex = trace.Entity.Index;
+			nint hitAddress = trace.Entity.Address;
+
+			for (int i = 1; i <= AimbotDetector.MaxPlayers; i++)
+			{
+				var target = _getPlayer(i);
+				if (target is not { IsValid: true } || target.PlayerID == player.PlayerID)
+					continue;
+
+				if (!target.IsAlive || !_areEnemies(player.PlayerID, target.PlayerID))
+					continue;
+
+				var targetPawn = target.PlayerPawn;
+				var targetCtrl = target.Controller;
+
+				bool directHit = false;
+				if (targetPawn != null && (targetPawn.Index == hitIndex || targetPawn.Address == hitAddress))
+					directHit = true;
+				else if (targetCtrl != null && (targetCtrl.Index == hitIndex || targetCtrl.Address == hitAddress))
+					directHit = true;
+				else if (target.PlayerID == (int)hitIndex)
+					directHit = true;
+
+				if (directHit)
+					return (i, trace.EndPos);
+			}
+		}
+
+		// 2. Geometric hull/cylinder intersection bounded by wall line-of-sight distance
+		int bestTarget = -1;
+		float bestDist = float.MaxValue;
+		Vector bestPoint = trace.DidHit ? trace.EndPos : end;
 
 		for (int i = 1; i <= AimbotDetector.MaxPlayers; i++)
 		{
@@ -493,18 +539,50 @@ internal sealed class TriggerbotDetector
 			if (target is not { IsValid: true } || target.PlayerID == player.PlayerID)
 				continue;
 
+			if (!target.IsAlive || !_areEnemies(player.PlayerID, target.PlayerID))
+				continue;
+
 			var targetPawn = target.PlayerPawn;
 			if (targetPawn is null)
 				continue;
 
-			if (targetPawn.Index != hitIndex && targetPawn.Address != hitAddress)
+			Vector origin = targetPawn.AbsOrigin ?? default;
+			if (!AimMath.IsFinite(origin))
 				continue;
 
-			if (!target.IsAlive || !_areEnemies(player.PlayerID, target.PlayerID))
+			float dx = origin.X - eye.X;
+			float dy = origin.Y - eye.Y;
+			float dz = origin.Z - eye.Z;
+
+			float t = dx * forward.X + dy * forward.Y + dz * forward.Z;
+			if (t < 30.0f || t >= maxDistance)
 				continue;
 
-			return (i, trace.EndPos);
+			float px = eye.X + forward.X * t;
+			float py = eye.Y + forward.Y * t;
+			float pz = eye.Z + forward.Z * t;
+
+			if (pz < origin.Z - 4.0f || pz > origin.Z + 76.0f)
+				continue;
+
+			float latX = px - origin.X;
+			float latY = py - origin.Y;
+			float latDistSq = latX * latX + latY * latY;
+
+			const float playerRadius = 18.0f; // CS2 player hull radius (16 + 2 tolerance)
+			if (latDistSq <= playerRadius * playerRadius)
+			{
+				if (t < bestDist)
+				{
+					bestDist = t;
+					bestTarget = i;
+					bestPoint = new Vector(px, py, pz);
+				}
+			}
 		}
+
+		if (bestTarget >= 1)
+			return (bestTarget, bestPoint);
 
 		return (-1, trace.EndPos);
 	}
