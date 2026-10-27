@@ -9,7 +9,9 @@ using SwiftlyS2.Shared.GameHooks;
 using SwiftlyS2.Shared.Misc;
 using SwiftlyS2.Shared.Plugins;
 using SwiftlyS2.Shared.Players;
+using SwiftlyS2.Shared.Natives;
 using AegisAC.Configuration;
+using AegisAC.Modules;
 using AegisAC.Notifications;
 using AegisAC.Punishment;
 
@@ -27,6 +29,7 @@ public sealed class AegisAC : BasePlugin
 	private AegisConfig _config = new();
 	private PunishmentManager _punishmentManager = null!;
 	private AimbotDetector _detector = null!;
+	private TriggerbotDetector _triggerbot = null!;
 	private IDisposable? _configChangeToken;
 
 	public AegisAC(ISwiftlyCore core) : base(core) { }
@@ -51,7 +54,15 @@ public sealed class AegisAC : BasePlugin
 		_detector = new AimbotDetector(
 			_config.Aimbot,
 			id => Core.PlayerManager.GetPlayer(id),
-			Announce,
+			AnnounceAimbot,
+			msg => { if (Utils.DebugMode) Utils.ConsoleLog(msg); });
+
+		_triggerbot = new TriggerbotDetector(
+			_config.Triggerbot,
+			Core.Trace,
+			id => Core.PlayerManager.GetPlayer(id),
+			(a, b) => _detector.AreEnemies(a, b),
+			AnnounceTriggerbot,
 			msg => { if (Utils.DebugMode) Utils.ConsoleLog(msg); });
 
 		Core.GameHooks.Controller.ProcessUsercmds.Pre += OnProcessUsercmds;
@@ -60,7 +71,7 @@ public sealed class AegisAC : BasePlugin
 		Core.Event.OnClientDisconnected += OnClientDisconnected;
 		Core.Event.OnMapLoad += OnMapLoad;
 
-		Utils.Log("initialized. Commands: aimbot_status aegis_reload");
+		Utils.Log("initialized. Commands: aimbot_status triggerbot_status aegis_reload");
 	}
 
 	public override void Unload()
@@ -89,18 +100,29 @@ public sealed class AegisAC : BasePlugin
 	private void OnProcessUsercmds(ref ProcessUsercmdsPreContext ctx)
 	{
 		_detector.OnProcessUsercmds(ctx.Params.Player, ctx.Params.Usercmds);
+		_triggerbot.OnProcessUsercmds(ctx.Params.Player, ctx.Params.Usercmds);
 	}
 
 	private void OnSetupMove(ref SetupMoveMovementPreContext ctx)
 	{
-		_detector.OnSetupMove(ctx.Params.Player, (int)ctx.Params.UserCmd.CommandNumber, CurrentTick);
+		int cmdNum = (int)ctx.Params.UserCmd.CommandNumber;
+		_detector.OnSetupMove(ctx.Params.Player, cmdNum, CurrentTick);
+		_triggerbot.OnSetupMove(ctx.Params.Player, cmdNum, CurrentTick);
 	}
 
 	private void OnTick() => _detector.OnGameFrame(CurrentTick);
 
-	private void OnClientDisconnected(SwiftlyS2.Shared.Events.IOnClientDisconnectedEvent e) => _detector.OnClientDisconnect(e.PlayerId);
+	private void OnClientDisconnected(SwiftlyS2.Shared.Events.IOnClientDisconnectedEvent e)
+	{
+		_detector.OnClientDisconnect(e.PlayerId);
+		_triggerbot.OnClientDisconnect(e.PlayerId);
+	}
 
-	private void OnMapLoad(SwiftlyS2.Shared.Events.IOnMapLoadEvent e) => _detector.Reset();
+	private void OnMapLoad(SwiftlyS2.Shared.Events.IOnMapLoadEvent e)
+	{
+		_detector.Reset();
+		_triggerbot.Reset();
+	}
 
 	[GameEventHandler(HookMode.Post)]
 	public HookResult OnWeaponFire(EventWeaponFire e)
@@ -132,13 +154,22 @@ public sealed class AegisAC : BasePlugin
 			}
 			catch { }
 
-			_detector.OnPlayerHurt(attacker, victim, e.Weapon ?? "", CurrentTick);
+			int? matchedCmd = _detector.OnPlayerHurt(attacker, victim, e.Weapon ?? "", CurrentTick);
+			_triggerbot.OnPlayerHurt(attacker, victim, e.Weapon ?? "", e.ActualDmgHealth, matchedCmd);
 		}
 		return HookResult.Continue;
 	}
 
+	[GameEventHandler(HookMode.Post)]
+	public HookResult OnSmokeDetonate(EventSmokegrenadeDetonate e)
+	{
+		Vector center = new(e.X, e.Y, e.Z);
+		_triggerbot.OnSmokeDetonate(center);
+		return HookResult.Continue;
+	}
+
 	[Command("aimbot_status", registerRaw: true, permission: "@css/root")]
-	public void StatusCommand(ICommandContext context)
+	public void AimbotStatusCommand(ICommandContext context)
 	{
 		if (!_config.Debug)
 		{
@@ -149,6 +180,18 @@ public sealed class AegisAC : BasePlugin
 		context.Reply($"[AegisAC Aimbot] tick={CurrentTick} {_detector.Stats()}");
 	}
 
+	[Command("triggerbot_status", registerRaw: true, permission: "@css/root")]
+	public void TriggerbotStatusCommand(ICommandContext context)
+	{
+		if (!_config.Debug)
+		{
+			context.Reply("[AegisAC] Debug mode is disabled.");
+			return;
+		}
+
+		context.Reply($"[AegisAC Triggerbot] tick={CurrentTick} {_triggerbot.Stats()}");
+	}
+
 	[Command("aegis_reload", registerRaw: true, permission: "@css/root")]
 	[CommandAlias("aegisreload", registerRaw: true)]
 	public void ReloadCommand(ICommandContext context)
@@ -157,7 +200,7 @@ public sealed class AegisAC : BasePlugin
 		context.Reply("[AegisAC] Configuration reloaded successfully.");
 	}
 
-	private void Announce(IPlayer player, string detection, string evidence)
+	private void AnnounceAimbot(IPlayer player, string detection, string evidence)
 	{
 		string name = player.Controller?.PlayerName ?? $"#{player.PlayerID}";
 		Utils.Log($" \x04[AegisAC]\x01 \x07{name}\x01 detected: \x0F{detection}\x01");
@@ -173,6 +216,26 @@ public sealed class AegisAC : BasePlugin
 				"Aimbot",
 				detection,
 				_config.Aimbot.Punishment,
+				evidence);
+		}
+	}
+
+	private void AnnounceTriggerbot(IPlayer player, string detection, string evidence)
+	{
+		string name = player.Controller?.PlayerName ?? $"#{player.PlayerID}";
+		Utils.Log($" \x04[AegisAC]\x01 \x07{name}\x01 detected: \x0F{detection}\x01");
+
+		_punishmentManager.Punish(player, _config.Triggerbot.Punishment, "Triggerbot", detection);
+
+		if (_config.Discord.Enabled && !string.IsNullOrWhiteSpace(_config.Discord.WebhookUrl))
+		{
+			DiscordWebhookNotifier.SendAlert(
+				_config.Discord.WebhookUrl,
+				name,
+				player.SteamID,
+				"Triggerbot",
+				detection,
+				_config.Triggerbot.Punishment,
 				evidence);
 		}
 	}

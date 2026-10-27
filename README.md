@@ -98,13 +98,44 @@ The Aimbot detector inspects user commands, view angles, weapon fire correlation
 
 </details>
 
+<details open>
+<summary><b>Active Module: Triggerbot Detection (Click to collapse/expand)</b></summary>
+<br/>
+
+The Triggerbot detector inspects real-time crosshair raycast targeting, sub-tick reaction latencies, angle-holding behavior, and smoke boundary occlusion.
+
+### Detection Methods
+
+1. **Sub-Tick Reaction Timing Analysis**
+   - **How it works:** Tracks when an enemy enters the player's crosshair (both aim-driven flicks and target-driven angle holds). Compares crosshair acquisition tick to the sub-tick command where primary attack is initiated.
+   - **Trigger Condition:** Recurring reaction times of 0 to 1 tick (≤ 15.6ms at 64-tick), which are physically impossible for human neural pathways.
+
+2. **Dynamic Decay Scoring System**
+   - **How it works:** Utilizes a progressive reaction score. Inhuman reaction times (0-1 tick) add +2 to the score, while normal human reactions (≥ 2 ticks) actively decay the score by 3, preventing bans from isolated lucky pre-fires.
+   - **Trigger Condition:** Cumulative reaction score reaching `DetectionThreshold` (default: 10) within the 5-minute sliding window.
+
+3. **Smoke Occlusion & Safety Monitoring**
+   - **How it works:** Dynamically tracks smoke grenade detonation coordinates and volumetric boundaries. Automatically discards shots through active smokes or during uncertain map-load smoke states to prevent false flags through visual volumetric boundaries.
+
+### Strictness Rating
+
+| Metric | Setting / Behavior |
+| :--- | :--- |
+| **Strictness Level** | **Moderate / High Precision** |
+| **Evidence Window** | 5 Minutes (Sliding) |
+| **Score Threshold** | 10 Score points (5 consecutive 0-1 tick reactions, decaying with normal shots) |
+| **Damage Gate** | Active — evaluated strictly upon confirmed `player_hurt` events |
+| **Smoke Exclusion** | Active — automated ray-box smoke volume intersection check |
+
+</details>
+
 <details>
 <summary><b>Planned Modules (Roadmap)</b></summary>
 <br/>
 
 - **Anti-Untrusted / Impossible Angles:** Flags invalid view angles (out-of-bounds Pitch, Yaw, Roll, NaN/Infinity exploits). *(Strictness: Aggressive / Instant)*
-- **Triggerbot / Instant Reaction Detection:** Flags sub-human reaction latencies across multiple engagements. *(Strictness: Moderate)*
-- **Movement / Anti-Bhop** Detects automated jump timing and duck-spam movement scripts. *(Strictness: Moderate)*
+- **Movement / Anti-Bhop & Duck-Spam:** Detects automated jump timing, scroll-wheel automation, and desync duck-spam movement scripts. *(Strictness: Moderate)*
+- **Dormant ESP / Server-Side Visibility Culling:** Suppresses network transmission of dormant enemy player pawns behind walls. *(Strictness: Active Mitigation)*
 
 </details>
 
@@ -181,6 +212,18 @@ AegisAC configurations are stored in `addons/swiftlys2/configs/plugins/AegisAC/c
       "TeammatesAreEnemies": false
     },
 
+    // Triggerbot detection module configuration
+    "Triggerbot": {
+      // Enable or disable triggerbot detection
+      "Enabled": true,
+
+      // Punishment applied upon detection: "none", "kick", or "ban"
+      "Punishment": "none",
+
+      // Reaction score threshold required to trigger punishment (decay score)
+      "DetectionThreshold": 10
+    },
+
     // Discord webhook notifications
     "Discord": {
       // Enable or disable Discord alert embeds
@@ -203,6 +246,7 @@ All commands can be executed via the server console or in-game by authorized adm
 | :--- | :--- | :--- | :--- |
 | `aegis_reload` | `aegisreload` | `@css/root` | Reloads `config.jsonc` dynamically without restarting the server. |
 | `aimbot_status` | — | `@css/root` | Prints real-time aimbot detector statistics and buffers (active only when `Debug: true` in config). |
+| `triggerbot_status` | — | `@css/root` | Prints real-time triggerbot detector statistics and active smokes (active only when `Debug: true` in config). |
 
 ---
 
