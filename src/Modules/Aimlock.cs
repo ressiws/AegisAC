@@ -382,8 +382,10 @@ internal sealed class AimlockDetector
 			var sample = st.Pending;
 			st.Pending = default;
 
-			if (sample.ServerTick != currentTick || sample.ServerTick == st.LastProcessedTick || _findFrame(sample.ServerTick) == null)
+			if (sample.ServerTick > currentTick || currentTick - sample.ServerTick > 1 || sample.ServerTick <= st.LastProcessedTick || _findFrame(sample.ServerTick) == null)
 			{
+				if (st.Track.TargetIndex >= 0)
+					_debug($"[Aimlock] {Name(player)} tracking reset: snapshot mismatch (sampleTick={sample.ServerTick}, currentTick={currentTick}, lastProcessed={st.LastProcessedTick}).");
 				st.Track.Clear();
 				continue;
 			}
@@ -391,6 +393,21 @@ internal sealed class AimlockDetector
 			st.LastProcessedTick = sample.ServerTick;
 			Evaluate(player, st, sample);
 		}
+	}
+
+	private static AimlockLagHypothesis? BestHypothesis(AimlockTrack track, bool requireEvidence)
+	{
+		AimlockLagHypothesis? best = null;
+		for (int index = 0; index < track.HypothesisCount; index++)
+		{
+			var hypothesis = track.Hypotheses[index];
+			if (!hypothesis.Valid || (requireEvidence && (!MeetsCoverage(hypothesis.OnTargetSamples, track.Samples) || hypothesis.MaximumTargetDisplacement < hypothesis.RequiredTargetDisplacement)))
+				continue;
+
+			if (best == null || hypothesis.OnTargetSamples > best.Value.OnTargetSamples)
+				best = hypothesis;
+		}
+		return best;
 	}
 
 	private void Evaluate(IPlayer player, AimlockPlayerData data, AimlockSample sample)
@@ -502,6 +519,7 @@ internal sealed class AimlockDetector
 		int serverTickDelta = sample.ServerTick - data.Track.LastServerTick;
 		if (serverTickDelta != 1)
 		{
+			_debug($"[Aimlock] {Name(player)} tracking reset: simulated ticks not consecutive (delta={serverTickDelta}).");
 			data.Track.Clear();
 			StartTrack();
 			return;
@@ -540,6 +558,7 @@ internal sealed class AimlockDetector
 
 		if (validHypotheses == 0)
 		{
+			_debug($"[Aimlock] {Name(player)} tracking reset: fixed target history no longer trustworthy.");
 			data.Track.Clear();
 			StartTrack();
 			return;
@@ -548,31 +567,31 @@ internal sealed class AimlockDetector
 		data.Track.LastServerTick = sample.ServerTick;
 
 		int elapsedTicks = sample.ServerTick - data.Track.StartServerTick;
-		if (elapsedTicks < TrackingTicks)
-			return;
-
-		// Check best hypothesis
-		AimlockLagHypothesis? bestPassing = null;
-		for (int i = 0; i < data.Track.HypothesisCount; i++)
+		if (elapsedTicks > 0 && elapsedTicks < TrackingTicks && elapsedTicks % RearmTicks == 0)
 		{
-			var h = data.Track.Hypotheses[i];
-			if (!h.Valid)
-				continue;
-
-			if (MeetsCoverage(h.OnTargetSamples, data.Track.Samples) && h.MaximumTargetDisplacement >= h.RequiredTargetDisplacement)
+			var best = BestHypothesis(data.Track, requireEvidence: false);
+			if (best != null)
 			{
-				if (bestPassing == null || h.OnTargetSamples > bestPassing.Value.OnTargetSamples)
-					bestPassing = h;
+				_debug($"[Aimlock] {Name(player)} episode: {elapsedTicks / 64.0f:F1}/2.0s, best delay {best.Value.LagTicks}t kept {best.Value.OnTargetSamples}/{data.Track.Samples} on target; target moved {best.Value.MaximumTargetDisplacement:F1}°/{best.Value.RequiredTargetDisplacement:F1}° required.");
 			}
 		}
 
-		if (bestPassing == null)
+		if (elapsedTicks < TrackingTicks)
+			return;
+
+		var passing = BestHypothesis(data.Track, requireEvidence: true);
+		if (passing == null)
 		{
+			var best = BestHypothesis(data.Track, requireEvidence: false);
+			if (best != null)
+			{
+				_debug($"[Aimlock] {Name(player)} episode ended without evidence: best delay {best.Value.LagTicks}t kept {best.Value.OnTargetSamples}/{data.Track.Samples} on target; target moved {best.Value.MaximumTargetDisplacement:F1}°/{best.Value.RequiredTargetDisplacement:F1}° required.");
+			}
 			data.Track.Clear();
 			return;
 		}
 
-		AddIncident(player, data, bestPassing.Value);
+		AddIncident(player, data, passing.Value);
 	}
 
 	private void AddIncident(IPlayer player, AimlockPlayerData data, in AimlockLagHypothesis hypothesis)
