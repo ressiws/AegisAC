@@ -285,11 +285,11 @@ internal sealed class AimbotDetector
 
 	public void OnGameFrame(int currentTick)
 	{
-		if (!_settings.Enabled)
-			return;
-
 		CaptureFrame(currentTick);
 		StatFrames++;
+
+		if (!_settings.Enabled)
+			return;
 
 		for (int id = 0; id < MaxPlayers; id++)
 		{
@@ -354,6 +354,16 @@ internal sealed class AimbotDetector
 			if (_frames.Count > PositionHistoryLimit)
 				_frames.RemoveAt(0);
 		}
+	}
+
+	public PositionFrame? FindFrame(int tick)
+	{
+		for (int i = _frames.Count - 1; i >= 0; i--)
+		{
+			if (_frames[i].ServerTick == tick)
+				return _frames[i];
+		}
+		return null;
 	}
 
 	private bool FindPosition(int tick, int id, out TrackedPosition pos)

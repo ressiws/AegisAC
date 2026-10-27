@@ -30,6 +30,7 @@ public sealed class AegisAC : BasePlugin
 	private PunishmentManager _punishmentManager = null!;
 	private AimbotDetector _detector = null!;
 	private TriggerbotDetector _triggerbot = null!;
+	private AimlockDetector _aimlock = null!;
 	private IDisposable? _configChangeToken;
 
 	public AegisAC(ISwiftlyCore core) : base(core) { }
@@ -65,13 +66,21 @@ public sealed class AegisAC : BasePlugin
 			AnnounceTriggerbot,
 			msg => { if (Utils.DebugMode) Utils.ConsoleLog(msg); });
 
+		_aimlock = new AimlockDetector(
+			_config.Aimlock,
+			tick => _detector.FindFrame(tick),
+			id => Core.PlayerManager.GetPlayer(id),
+			(a, b) => _detector.AreEnemies(a, b),
+			AnnounceAimlock,
+			msg => { if (Utils.DebugMode) Utils.ConsoleLog(msg); });
+
 		Core.GameHooks.Controller.ProcessUsercmds.Pre += OnProcessUsercmds;
 		Core.GameHooks.Movement.SetupMove.Pre += OnSetupMove;
 		Core.Event.OnTick += OnTick;
 		Core.Event.OnClientDisconnected += OnClientDisconnected;
 		Core.Event.OnMapLoad += OnMapLoad;
 
-		Utils.Log("initialized. Commands: aimbot_status triggerbot_status aegis_reload");
+		Utils.Log("initialized. Commands: aimbot_status triggerbot_status aimlock_status aegis_reload");
 	}
 
 	public override void Unload()
@@ -108,20 +117,27 @@ public sealed class AegisAC : BasePlugin
 		int cmdNum = (int)ctx.Params.UserCmd.CommandNumber;
 		_detector.OnSetupMove(ctx.Params.Player, cmdNum, CurrentTick);
 		_triggerbot.OnSetupMove(ctx.Params.Player, cmdNum, CurrentTick);
+		_aimlock.OnSetupMove(ctx.Params.Player, cmdNum, CurrentTick);
 	}
 
-	private void OnTick() => _detector.OnGameFrame(CurrentTick);
+	private void OnTick()
+	{
+		_detector.OnGameFrame(CurrentTick);
+		_aimlock.OnGameFrame(CurrentTick);
+	}
 
 	private void OnClientDisconnected(SwiftlyS2.Shared.Events.IOnClientDisconnectedEvent e)
 	{
 		_detector.OnClientDisconnect(e.PlayerId);
 		_triggerbot.OnClientDisconnect(e.PlayerId);
+		_aimlock.OnClientDisconnect(e.PlayerId);
 	}
 
 	private void OnMapLoad(SwiftlyS2.Shared.Events.IOnMapLoadEvent e)
 	{
 		_detector.Reset();
 		_triggerbot.Reset();
+		_aimlock.Reset();
 	}
 
 	[GameEventHandler(HookMode.Post)]
@@ -196,6 +212,18 @@ public sealed class AegisAC : BasePlugin
 		context.Reply($"[AegisAC Triggerbot] tick={CurrentTick} {_triggerbot.Stats()}");
 	}
 
+	[Command("aimlock_status", registerRaw: true, permission: "@css/root")]
+	public void AimlockStatusCommand(ICommandContext context)
+	{
+		if (!_config.Debug)
+		{
+			context.Reply("[AegisAC] Debug mode is disabled.");
+			return;
+		}
+
+		context.Reply($"[AegisAC Aimlock] tick={CurrentTick} {_aimlock.Stats()}");
+	}
+
 	[Command("aegis_reload", registerRaw: true, permission: "@css/root")]
 	[CommandAlias("aegisreload", registerRaw: true)]
 	public void ReloadCommand(ICommandContext context)
@@ -240,6 +268,26 @@ public sealed class AegisAC : BasePlugin
 				"Triggerbot",
 				detection,
 				_config.Triggerbot.Punishment,
+				evidence);
+		}
+	}
+
+	private void AnnounceAimlock(IPlayer player, string detection, string evidence)
+	{
+		string name = player.Controller?.PlayerName ?? $"#{player.PlayerID}";
+		Utils.Log($" \x04[AegisAC]\x01 \x07{name}\x01 detected: \x0F{detection}\x01");
+
+		_punishmentManager.Punish(player, _config.Aimlock.Punishment, "Aimlock", detection);
+
+		if (_config.Discord.Enabled && !string.IsNullOrWhiteSpace(_config.Discord.WebhookUrl))
+		{
+			DiscordWebhookNotifier.SendAlert(
+				_config.Discord.WebhookUrl,
+				name,
+				player.SteamID,
+				"Aimlock",
+				detection,
+				_config.Aimlock.Punishment,
 				evidence);
 		}
 	}
