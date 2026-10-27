@@ -49,6 +49,22 @@ public sealed class TriggerbotConfig
 }
 
 /// <summary>
+/// Configuration for the Aimlock detection module.
+/// </summary>
+public sealed class AimlockConfig
+{
+	[Description("Enable or disable the aimlock detection module.")]
+	public bool Enabled { get; set; } = true;
+
+	[Description("Punishment applied when aimlock is detected: 'none', 'kick', or 'ban'.")]
+	[JsonConverter(typeof(JsonStringEnumConverter))]
+	public PunishmentType Punishment { get; set; } = PunishmentType.Ban;
+
+	[Description("Number of sustained aimlock tracking incidents within 5 minutes required to punish (default: 3).")]
+	public int EvidenceThreshold { get; set; } = 3;
+}
+
+/// <summary>
 /// Configuration for Discord webhook integration.
 /// </summary>
 public sealed class DiscordConfig
@@ -79,6 +95,9 @@ public sealed class AegisConfig
 
 	[Description("Triggerbot detector module configuration.")]
 	public TriggerbotConfig Triggerbot { get; set; } = new();
+
+	[Description("Aimlock detector module configuration.")]
+	public AimlockConfig Aimlock { get; set; } = new();
 
 	[Description("Discord webhook notifications configuration.")]
 	public DiscordConfig Discord { get; set; } = new();

@@ -130,6 +130,38 @@ The Triggerbot detector inspects real-time crosshair raycast targeting, sub-tick
 
 </details>
 
+<details open>
+<summary><b>Active Module: Aimlock Detection (Click to collapse/expand)</b></summary>
+<br/>
+
+The Aimlock detector analyzes sustained crosshair adherence, lag-compensated target tracking, and mechanical angle locking while enemies move across the screen.
+
+### Detection Methods
+
+1. **Continuous Angular Error & Hull Tracking**
+   - **How it works:** Analyzes the player's view angles against enemy player hull boundaries across 3 distinct body heights (lower torso: `8.0`, chest: `46.0`, head: `64.0`) over a sliding 2.0-second tracking window (`128` ticks at 64-tick).
+   - **Trigger Condition:** Sustained crosshair placement covering ≥ 95% of ticks (`MeetsCoverage`) within the enemy bounding hull while the enemy traverses across the player's screen.
+
+2. **Lag-Compensated Multi-Hypothesis Verification**
+   - **How it works:** Evaluates target position against 5 distinct historical latency hypotheses (including client ping latency + tick interpolation) using the shared position buffer.
+
+3. **False-Positive Prevention Gates**
+   - **Distance Gate:** Point-blank interactions (< 200 units) are excluded to prevent false triggers during close-quarters body blocks.
+   - **Target Traversal Gate:** Requires the enemy to have moved at least 128 units (~4 player widths) across the player's visual field to eliminate false positives on stationary or corner-holding targets.
+
+### Strictness Rating
+
+| Metric | Setting / Behavior |
+| :--- | :--- |
+| **Strictness Level** | **Conservative (High Precision)** |
+| **Evidence Window** | 5 Minutes (Sliding) |
+| **Evidence Threshold** | 3 Verified Tracking Incidents required |
+| **Tracking Window** | 2.0 Seconds (128 ticks at 64-tick) |
+| **Hull Coverage** | ≥ 95% on-target consistency |
+| **Min Target Travel** | > 128.0 units (~4 player widths) |
+
+</details>
+
 <details>
 <summary><b>Planned Modules (Roadmap)</b></summary>
 <br/>
@@ -228,6 +260,18 @@ AegisAC configurations are stored in `addons/swiftlys2/configs/plugins/AegisAC/c
       "MaxReactionTimeMs": 120.0
     },
 
+    // Aimlock detection module configuration
+    "Aimlock": {
+      // Enable or disable aimlock detection
+      "Enabled": true,
+
+      // Punishment applied upon detection: "none", "kick", or "ban"
+      "Punishment": "ban",
+
+      // Number of aimlock tracking incidents within 5 minutes required to punish
+      "EvidenceThreshold": 3
+    },
+
     // Discord webhook notifications
     "Discord": {
       // Enable or disable Discord alert embeds
@@ -251,6 +295,7 @@ All commands can be executed via the server console or in-game by authorized adm
 | `aegis_reload` | `aegisreload` | `@css/root` | Reloads `config.jsonc` dynamically without restarting the server. |
 | `aimbot_status` | — | `@css/root` | Prints real-time aimbot detector statistics and buffers (active only when `Debug: true` in config). |
 | `triggerbot_status` | — | `@css/root` | Prints real-time triggerbot detector statistics and active smokes (active only when `Debug: true` in config). |
+| `aimlock_status` | — | `@css/root` | Prints real-time aimlock detector statistics and tracking sessions (active only when `Debug: true` in config). |
 
 ---
 

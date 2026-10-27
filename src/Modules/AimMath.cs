@@ -39,7 +39,7 @@ internal static class AimMath
 		return new Vector(cp * MathF.Cos(yaw), cp * MathF.Sin(yaw), -MathF.Sin(pitch));
 	}
 
-	private static float Dot(in Vector a, in Vector b) => a.X * b.X + a.Y * b.Y + a.Z * b.Z;
+	public static float Dot(in Vector a, in Vector b) => a.X * b.X + a.Y * b.Y + a.Z * b.Z;
 
 	public static float AngularDistance(in QAngle a, in QAngle b)
 	{
