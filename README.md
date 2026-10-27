@@ -108,7 +108,7 @@ The Triggerbot detector inspects real-time crosshair raycast targeting, sub-tick
 
 1. **Sub-Tick Reaction Timing Analysis**
    - **How it works:** Tracks when an enemy enters the player's crosshair (both aim-driven flicks and target-driven angle holds). Compares the exact target acquisition command to the sub-tick command where the weapon discharged.
-   - **Trigger Condition:** Reaction latency ≤ `MaxReactionTicks` (default: ≤ 3 ticks / ~46.8ms at 64-tick), which is physically impossible for human neural response.
+   - **Trigger Condition:** Reaction latency ≤ `MaxReactionTimeMs` (default: ≤ 120ms / ~7-8 ticks at 64-tick), which is physically impossible for human visual recognition response.
 
 2. **3-Incident Evidence System**
    - **How it works:** Follows the same evidence-based structure as Aimbot. Each verified damaging shot with unnatural reaction latency records 1 triggerbot incident.
@@ -124,7 +124,7 @@ The Triggerbot detector inspects real-time crosshair raycast targeting, sub-tick
 | **Strictness Level** | **Conservative (High Precision)** |
 | **Evidence Window** | 5 Minutes (Sliding) |
 | **Evidence Threshold** | 3 Verified Damaging Incidents required |
-| **Max Reaction Timing** | ≤ 3 Ticks (~46.8ms at 64-tick) |
+| **Max Reaction Timing** | ≤ 120ms (~7-8 Ticks at 64-tick) |
 | **Damage Gate** | Active — evaluated strictly upon confirmed `player_hurt` events |
 | **Smoke Exclusion** | Active — automated ray-box smoke volume intersection check |
 
@@ -224,8 +224,8 @@ AegisAC configurations are stored in `addons/swiftlys2/configs/plugins/AegisAC/c
       // Number of unnatural triggerbot reaction incidents within 5 minutes required to punish
       "EvidenceThreshold": 3,
 
-      // Maximum reaction ticks considered an unnatural triggerbot reaction (default: 3 ticks / ~46.8ms)
-      "MaxReactionTicks": 3
+      // Maximum reaction time in milliseconds considered an unnatural triggerbot reaction (default: 120ms)
+      "MaxReactionTimeMs": 120.0
     },
 
     // Discord webhook notifications

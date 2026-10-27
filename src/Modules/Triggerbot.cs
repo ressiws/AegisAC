@@ -422,7 +422,7 @@ internal sealed class TriggerbotDetector
 		var now = DateTime.UtcNow;
 		st.Incidents.RemoveAll(i => now - i.Time >= EvidenceWindow);
 
-		if (pendingMatch.ReactionTicks <= _config.MaxReactionTicks)
+		if (reactionMs <= _config.MaxReactionTimeMs)
 		{
 			st.Incidents.Add(new TriggerIncident
 			{
@@ -435,7 +435,7 @@ internal sealed class TriggerbotDetector
 				Mode = pendingMatch.Mode
 			});
 
-			_debug($"[Triggerbot] {Name(attacker)} unnatural trigger reaction: {pendingMatch.ReactionTicks} ticks ({reactionMs:F1}ms, mode: {pendingMatch.Mode}) on #{victim.PlayerID} dealing {damage} dmg. Evidence: {st.Incidents.Count}/{_config.EvidenceThreshold}.");
+			_debug($"[Triggerbot] {Name(attacker)} unnatural trigger reaction: {pendingMatch.ReactionTicks} ticks ({reactionMs:F1}ms <= {_config.MaxReactionTimeMs:F0}ms, mode: {pendingMatch.Mode}) on #{victim.PlayerID} dealing {damage} dmg. Evidence: {st.Incidents.Count}/{_config.EvidenceThreshold}.");
 
 			if (st.Incidents.Count >= _config.EvidenceThreshold)
 			{
@@ -457,7 +457,7 @@ internal sealed class TriggerbotDetector
 		}
 		else
 		{
-			_debug($"[Triggerbot] {Name(attacker)} normal human reaction: {pendingMatch.ReactionTicks} ticks ({reactionMs:F1}ms, mode: {pendingMatch.Mode}) on #{victim.PlayerID}.");
+			_debug($"[Triggerbot] {Name(attacker)} normal human reaction: {pendingMatch.ReactionTicks} ticks ({reactionMs:F1}ms > {_config.MaxReactionTimeMs:F0}ms, mode: {pendingMatch.Mode}) on #{victim.PlayerID}.");
 		}
 	}
 
