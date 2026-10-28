@@ -100,12 +100,23 @@ public sealed class AegisAC : BasePlugin
 		if (loaded != null)
 		{
 			_config = loaded;
+			RefreshTeammatesAreEnemies();
 			Utils.DebugMode = _config.Debug;
 			_punishmentManager?.UpdateConfig(_config);
 			_detector?.UpdateConfig(_config.Aimbot);
 			_triggerbot?.UpdateConfig(_config.Triggerbot);
 			_aimlock?.UpdateConfig(_config.Aimlock);
 		}
+	}
+
+	private void RefreshTeammatesAreEnemies()
+	{
+		try
+		{
+			if (Core.ConVar.Find<bool>("mp_teammates_are_enemies")?.Value is bool cvarVal)
+				_config.Aimbot.TeammatesAreEnemies = cvarVal;
+		}
+		catch { }
 	}
 
 	private int CurrentTick => Core.Engine.GlobalVars.TickCount;
@@ -140,6 +151,7 @@ public sealed class AegisAC : BasePlugin
 
 	private void OnMapLoad(SwiftlyS2.Shared.Events.IOnMapLoadEvent e)
 	{
+		RefreshTeammatesAreEnemies();
 		_detector.Reset();
 		_triggerbot.Reset();
 		_aimlock.Reset();
@@ -172,13 +184,6 @@ public sealed class AegisAC : BasePlugin
 		var victim = e.UserIdPlayer;
 		if (attacker is { IsValid: true } && victim is { IsValid: true })
 		{
-			try
-			{
-				if (Core.ConVar.Find<bool>("mp_teammates_are_enemies")?.Value is bool cvarVal)
-					_config.Aimbot.TeammatesAreEnemies = cvarVal;
-			}
-			catch { }
-
 			int? matchedCmd = _detector.OnPlayerHurt(attacker, victim, e.Weapon ?? "", CurrentTick);
 			_triggerbot.OnPlayerHurt(attacker, victim, e.Weapon ?? "", e.ActualDmgHealth, matchedCmd);
 		}

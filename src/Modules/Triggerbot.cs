@@ -200,7 +200,18 @@ internal sealed class TriggerbotDetector
 			var pb = cmd.CSGOUserCmd;
 			int number = (int)cmd.CommandNumber;
 
-			if (st.Commands.Exists(c => c.CommandNumber == number))
+			bool isDup = false;
+			for (int ci = st.Commands.Count - 1; ci >= 0; ci--)
+			{
+				if (st.Commands[ci].CommandNumber == number)
+				{
+					isDup = true;
+					break;
+				}
+				if (st.Commands[ci].CommandNumber < number)
+					break;
+			}
+			if (isDup)
 				continue;
 
 			if (!pb.Accessor.HasField("base"))
@@ -395,7 +406,17 @@ internal sealed class TriggerbotDetector
 		int cmdNum = st.LastCommandNumber >= 0 ? st.LastCommandNumber : currentTick;
 		int reactionTicks = Math.Max(0, cmdNum - contactStart);
 
-		if (!st.Pending.Any(p => p.CommandNumber == cmdNum))
+		bool alreadyPending = false;
+		for (int pi = st.Pending.Count - 1; pi >= 0; pi--)
+		{
+			if (st.Pending[pi].CommandNumber == cmdNum)
+			{
+				alreadyPending = true;
+				break;
+			}
+		}
+
+		if (!alreadyPending)
 		{
 			st.Pending.Add(new TriggerPendingAttack
 			{
@@ -511,49 +532,13 @@ internal sealed class TriggerbotDetector
 			eye.Y + forward.Y * TraceLength,
 			eye.Z + forward.Z * TraceLength);
 
-		float maxDistance = TraceLength;
-		Vector hitEnd = end;
-		try
-		{
-			var traceParams = new TraceParams
-			{
-				InteractWith = MaskTrace.Solid | MaskTrace.Hitbox | MaskTrace.Player |
-				               MaskTrace.CsgoTeam1 | MaskTrace.CsgoTeam2
-			};
-
-			var trace = _traceManager.TraceShapeLine(eye, end, traceParams);
-			if (trace.DidHit && trace.Distance > 0.0f)
-			{
-				maxDistance = trace.Distance;
-				hitEnd = trace.EndPos;
-			}
-
-			// 1. Direct native trace hit check
-			if (trace.DidHit && trace.Entity != null && trace.Entity.IsValid)
-			{
-				uint hitIndex = trace.Entity.Index;
-
-				for (int i = 0; i < AimbotDetector.MaxPlayers; i++)
-				{
-					var target = _getPlayer(i);
-					if (target is not { IsValid: true } || target.PlayerID == player.PlayerID)
-						continue;
-
-					if (!target.IsAlive || !_areEnemies(player.PlayerID, target.PlayerID))
-						continue;
-
-					var targetPawn = target.PlayerPawn;
-					if (targetPawn != null && targetPawn.IsValid && targetPawn.Index == hitIndex)
-						return (target.PlayerID, trace.EndPos);
-				}
-			}
-		}
-		catch { }
-
-		// 2. Geometric hull/cylinder intersection bounded by wall line-of-sight distance
+		// Fast-pass: Pure geometric cylinder intersection (100% managed C#, zero native calls, zero crash risk)
 		int bestTarget = -1;
 		float bestDist = float.MaxValue;
-		Vector bestPoint = hitEnd;
+		Vector bestPoint = end;
+
+		const float playerRadius = 18.0f; // CS2 player hull radius (16 + 2 tolerance)
+		const float radiusSq = playerRadius * playerRadius;
 
 		for (int i = 0; i < AimbotDetector.MaxPlayers; i++)
 		{
@@ -565,7 +550,7 @@ internal sealed class TriggerbotDetector
 				continue;
 
 			var targetPawn = target.PlayerPawn;
-			if (targetPawn is null)
+			if (targetPawn is null || !targetPawn.IsValid)
 				continue;
 
 			Vector? maybeOrigin = targetPawn.AbsOrigin;
@@ -579,7 +564,7 @@ internal sealed class TriggerbotDetector
 			float dz = origin.Z - eye.Z;
 
 			float t = dx * forward.X + dy * forward.Y + dz * forward.Z;
-			if (t < 30.0f || t >= maxDistance)
+			if (t < 30.0f || t >= bestDist)
 				continue;
 
 			float px = eye.X + forward.X * t;
@@ -593,22 +578,38 @@ internal sealed class TriggerbotDetector
 			float latY = py - origin.Y;
 			float latDistSq = latX * latX + latY * latY;
 
-			const float playerRadius = 18.0f; // CS2 player hull radius (16 + 2 tolerance)
-			if (latDistSq <= playerRadius * playerRadius)
+			if (latDistSq <= radiusSq)
 			{
-				if (t < bestDist)
-				{
-					bestDist = t;
-					bestTarget = target.PlayerID;
-					bestPoint = new Vector(px, py, pz);
-				}
+				bestDist = t;
+				bestTarget = target.PlayerID;
+				bestPoint = new Vector(px, py, pz);
 			}
 		}
 
-		if (bestTarget >= 0)
-			return (bestTarget, bestPoint);
+		if (bestTarget < 0)
+			return (-1, end);
 
-		return (-1, hitEnd);
+		// If native trace is explicitly enabled, verify world line-of-sight to the candidate target
+		if (_config.EnableNativeTrace)
+		{
+			try
+			{
+				var traceParams = new TraceParams
+				{
+					InteractWith = MaskTrace.Solid | MaskTrace.CsgoTeam1 | MaskTrace.CsgoTeam2
+				};
+
+				var trace = _traceManager.TraceShapeLine(eye, bestPoint, traceParams);
+				if (trace.DidHit && trace.Distance < bestDist - 24.0f)
+				{
+					// Occluded by world geometry / wall
+					return (-1, trace.EndPos);
+				}
+			}
+			catch { }
+		}
+
+		return (bestTarget, bestPoint);
 	}
 
 	private static bool SegmentTouchesSmokeBounds(in Vector start, in Vector end, in Vector center)
@@ -616,37 +617,35 @@ internal sealed class TriggerbotDetector
 		float minFraction = 0.0f;
 		float maxFraction = 1.0f;
 
-		float[] starts = [start.X, start.Y, start.Z];
-		float[] ends = [end.X, end.Y, end.Z];
-		float[] centers = [center.X, center.Y, center.Z];
-
-		for (int axis = 0; axis < 3; axis++)
-		{
-			float delta = ends[axis] - starts[axis];
-			float min = centers[axis] - SmokeHalfExtent;
-			float max = centers[axis] + SmokeHalfExtent;
-
-			if (MathF.Abs(delta) < 1e-5f)
-			{
-				if (starts[axis] < min || starts[axis] > max)
-					return false;
-				continue;
-			}
-
-			float first = (min - starts[axis]) / delta;
-			float second = (max - starts[axis]) / delta;
-
-			if (first > second)
-				(first, second) = (second, first);
-
-			minFraction = MathF.Max(minFraction, first);
-			maxFraction = MathF.Min(maxFraction, second);
-
-			if (minFraction > maxFraction)
-				return false;
-		}
+		if (!ClipAxis(start.X, end.X, center.X, ref minFraction, ref maxFraction)) return false;
+		if (!ClipAxis(start.Y, end.Y, center.Y, ref minFraction, ref maxFraction)) return false;
+		if (!ClipAxis(start.Z, end.Z, center.Z, ref minFraction, ref maxFraction)) return false;
 
 		return true;
+	}
+
+	[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+	private static bool ClipAxis(float start, float end, float center, ref float minFraction, ref float maxFraction)
+	{
+		float delta = end - start;
+		float min = center - SmokeHalfExtent;
+		float max = center + SmokeHalfExtent;
+
+		if (MathF.Abs(delta) < 1e-5f)
+		{
+			return start >= min && start <= max;
+		}
+
+		float first = (min - start) / delta;
+		float second = (max - start) / delta;
+
+		if (first > second)
+			(first, second) = (second, first);
+
+		minFraction = MathF.Max(minFraction, first);
+		maxFraction = MathF.Min(maxFraction, second);
+
+		return minFraction <= maxFraction;
 	}
 
 	private static string Name(IPlayer p) => p.Controller?.PlayerName ?? $"#{p.PlayerID}";
