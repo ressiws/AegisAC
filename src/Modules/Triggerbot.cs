@@ -9,8 +9,9 @@
  *
  * Description:
  *   Server-side triggerbot detection module analyzing crosshair enemy
- *   acquisition, sub-tick reaction timings, raycast line-of-sight,
- *   and smoke occlusion volumes.
+ *   acquisition, sub-tick reaction distributions, decaying evidence scores,
+ *   timing variance, anatomical hitbox bounds, line-of-sight, smoke occlusion,
+ *   and network stability.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,7 +43,9 @@ internal sealed class TriggerPendingAttack
 	public required int TargetIndex { get; init; }
 	public required int ReactionTicks { get; init; }
 	public required TriggerContactMode Mode { get; init; }
-	public int SyntheticAnomalies { get; init; }
+	public required float AcquisitionSpeedDegPerTick { get; init; }
+	public required float FireSpeedDegPerTick { get; init; }
+	public required float MeanContactSpeedDegPerTick { get; init; }
 	public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
 }
 
@@ -55,7 +58,8 @@ internal sealed class TriggerIncident
 	public required string Weapon { get; init; }
 	public required int Damage { get; init; }
 	public required TriggerContactMode Mode { get; init; }
-	public int SyntheticAnomalies { get; init; }
+	public required float PointsAwarded { get; init; }
+	public required float ResultingScore { get; init; }
 }
 
 internal sealed class TriggerSmoke
@@ -67,8 +71,10 @@ internal sealed class TriggerSmoke
 internal sealed class TriggerCommand
 {
 	public required int CommandNumber { get; init; }
+	public required int ClientTick { get; init; }
 	public required QAngle Angles { get; init; }
 	public required bool IsFreshAttack { get; init; }
+	public required bool AttackHeld { get; init; }
 }
 
 internal sealed class TriggerPlayerState
@@ -77,17 +83,22 @@ internal sealed class TriggerPlayerState
 	public int ActiveTarget = -1;
 	public int ContactStartCommand = -1;
 	public TriggerContactMode ActiveMode = TriggerContactMode.TargetDriven;
+	public float AcquisitionSpeedDegPerTick;
+	public float ContactAccumulatedSpeed;
+	public int ContactTickCount;
 	public QAngle LastAngles;
 	public bool LastAnglesValid;
 	public bool WasAttacking;
 	public int AngleHoldingTicks;
 	public int LastFreshAttackCommand = -1;
-	public int SyntheticInputAnomalies;
 	public DateTime LastAnomalyAnnounce = DateTime.MinValue;
+	public float EvidenceScore;
+	public readonly Queue<DateTime> SyntheticAnomalyTimes = new();
 	public readonly int[] LastContactTick = new int[AimbotDetector.MaxPlayers + 1];
 	public readonly List<TriggerCommand> Commands = new();
 	public readonly List<TriggerPendingAttack> Pending = new();
 	public readonly List<TriggerIncident> Incidents = new();
+	public readonly List<(DateTime Time, int ReactionTicks, TriggerContactMode Mode)> ReactionHistory = new();
 
 	public TriggerPlayerState()
 	{
@@ -100,27 +111,35 @@ internal sealed class TriggerPlayerState
 		ActiveTarget = -1;
 		ContactStartCommand = -1;
 		ActiveMode = TriggerContactMode.TargetDriven;
+		AcquisitionSpeedDegPerTick = 0.0f;
+		ContactAccumulatedSpeed = 0.0f;
+		ContactTickCount = 0;
 		LastAnglesValid = false;
 		WasAttacking = false;
 		AngleHoldingTicks = 0;
 		LastFreshAttackCommand = -1;
-		SyntheticInputAnomalies = 0;
 		LastAnomalyAnnounce = DateTime.MinValue;
+		EvidenceScore = 0.0f;
+		SyntheticAnomalyTimes.Clear();
 		Array.Fill(LastContactTick, -1);
 		Commands.Clear();
 		Pending.Clear();
 		Incidents.Clear();
+		ReactionHistory.Clear();
 	}
 }
 
 internal sealed class TriggerbotDetector
 {
+	private const int HistoryLimit = 30;
 	private const int PendingLimit = 8;
-	private const int FreshContactTicks = 64; // ~1 second at 64-tick
-	private const float HeldAngleMaximumDegrees = 0.5f;
+	private const int FreshContactTicks = 5; // ~78ms edge-jitter guard at 64-tick
+	private const float HeldAngleMaximumDegrees = 0.65f;
 	private const float TraceLength = 8192.0f;
 	private const float SmokeHalfExtent = 320.0f;
+	private const float MaxEvidenceScore = 25.0f;
 	private static readonly TimeSpan EvidenceWindow = TimeSpan.FromMinutes(5);
+	private static readonly TimeSpan SyntheticWindow = TimeSpan.FromSeconds(60);
 	private static readonly TimeSpan SmokeLifetime = TimeSpan.FromMilliseconds(22500);
 
 	private static readonly HashSet<string> BallisticWeapons = new(StringComparer.OrdinalIgnoreCase)
@@ -131,28 +150,32 @@ internal sealed class TriggerbotDetector
 	};
 
 	private TriggerbotConfig _config;
-	private readonly ITraceManager _traceManager;
+	private readonly ITraceManager? _traceManager;
 	private readonly Func<int, IPlayer?> _getPlayer;
 	private readonly Func<int, int, bool> _areEnemies;
+	private readonly Func<int, PositionFrame?>? _findFrame;
+	private readonly NetworkSafetyMonitor? _networkSafety;
 	private readonly Action<IPlayer, string, string> _announce;
 	private readonly Action<string> _debug;
 
 	private readonly TriggerPlayerState[] _players = new TriggerPlayerState[AimbotDetector.MaxPlayers + 1];
-	private readonly Dictionary<ulong, List<TriggerIncident>> _persistentIncidents = new();
+	private readonly Dictionary<ulong, (float Score, List<TriggerIncident> Incidents, List<(DateTime Time, int ReactionTicks, TriggerContactMode Mode)> History)> _persistentState = new();
 	private readonly List<TriggerSmoke> _smokes = new();
 	private DateTime _smokeStateUnknownUntil = DateTime.MinValue;
 
 	public void UpdateConfig(TriggerbotConfig config) => _config = config;
 
-	public long StatContactChecks, StatAcquisitions, StatPendingAttacks, StatHurtsEvaluated, StatDetections;
+	public long StatContactChecks, StatAcquisitions, StatPendingAttacks, StatHurtsEvaluated, StatNormalDecay, StatNetworkVetoes, StatDetections;
 
 	public TriggerbotDetector(
 		TriggerbotConfig config,
-		ITraceManager traceManager,
+		ITraceManager? traceManager,
 		Func<int, IPlayer?> getPlayer,
 		Func<int, int, bool> areEnemies,
 		Action<IPlayer, string, string> announce,
-		Action<string> debug)
+		Action<string> debug,
+		Func<int, PositionFrame?>? findFrame = null,
+		NetworkSafetyMonitor? networkSafety = null)
 	{
 		_config = config;
 		_traceManager = traceManager;
@@ -160,21 +183,30 @@ internal sealed class TriggerbotDetector
 		_areEnemies = areEnemies;
 		_announce = announce;
 		_debug = debug;
+		_findFrame = findFrame;
+		_networkSafety = networkSafety;
 
 		for (int i = 0; i < _players.Length; i++)
 			_players[i] = new TriggerPlayerState();
 	}
 
 	public string Stats() =>
-		$"checks={StatContactChecks} acq={StatAcquisitions} pending={StatPendingAttacks} hurts={StatHurtsEvaluated} detections={StatDetections} smokes={_smokes.Count}";
+		$"checks={StatContactChecks} acq={StatAcquisitions} pending={StatPendingAttacks} hurts={StatHurtsEvaluated} " +
+		$"decay={StatNormalDecay} netVeto={StatNetworkVetoes} detections={StatDetections} smokes={_smokes.Count}";
 
 	public void Reset()
 	{
-		_persistentIncidents.Clear();
+		_persistentState.Clear();
 		for (int i = 0; i < _players.Length; i++)
 			_players[i].Reset();
 
 		_smokes.Clear();
+		// Only apply initial smoke lockout when native trace is active on a live map load
+		_smokeStateUnknownUntil = DateTime.MinValue;
+	}
+
+	public void OnMapReloadWithUncertainSmokes()
+	{
 		_smokeStateUnknownUntil = DateTime.UtcNow + SmokeLifetime;
 	}
 
@@ -196,6 +228,31 @@ internal sealed class TriggerbotDetector
 		_debug($"[Triggerbot] Smoke safety volume added at {center.X:F1}, {center.Y:F1}, {center.Z:F1}.");
 	}
 
+	/// <summary>
+	/// Zero-allocation query checking if a line segment [start, end] passes through any active smoke volume.
+	/// Shared across Triggerbot, Aimlock, and SilentAim.
+	/// </summary>
+	public bool IsSmokeOccluded(in Vector start, in Vector end)
+	{
+		DateTime now = DateTime.UtcNow;
+		if (now < _smokeStateUnknownUntil)
+			return true;
+
+		for (int i = _smokes.Count - 1; i >= 0; i--)
+		{
+			if (_smokes[i].Expires <= now)
+			{
+				_smokes.RemoveAt(i);
+				continue;
+			}
+
+			if (SegmentTouchesSmokeBounds(start, end, _smokes[i].Center))
+				return true;
+		}
+
+		return false;
+	}
+
 	public void OnProcessUsercmds(IPlayer player, List<SwiftlyS2.Shared.GameHooks.IUserCmd> cmds)
 	{
 		if (!_config.Enabled || !AimbotDetector.IsEligibleHuman(player) || cmds.Count == 0)
@@ -205,26 +262,13 @@ internal sealed class TriggerbotDetector
 		if (id < 0 || id >= _players.Length)
 			return;
 
+		bool batchBurst = cmds.Count > NetworkSafetyMonitor.MaximumBurstCommandsPerTick;
 		var st = _players[id];
 
 		foreach (var cmd in cmds)
 		{
 			var pb = cmd.CSGOUserCmd;
 			int number = (int)cmd.CommandNumber;
-
-			bool isDup = false;
-			for (int ci = st.Commands.Count - 1; ci >= 0; ci--)
-			{
-				if (st.Commands[ci].CommandNumber == number)
-				{
-					isDup = true;
-					break;
-				}
-				if (st.Commands[ci].CommandNumber < number)
-					break;
-			}
-			if (isDup)
-				continue;
 
 			if (!pb.Accessor.HasField("base"))
 				continue;
@@ -248,58 +292,113 @@ internal sealed class TriggerbotDetector
 					{
 						angles = shotAngles;
 						isFreshAttack = true;
-
-						// Overwatch reverse-engineered input state machine check:
-						// Real physical mouse switches and human hands cannot perform two complete click cycles in <= 2 ticks (<= 31.2ms).
-						// External triggerbots, macro scripts, or injected SendInput calls pulse duplicate Down events or rapid synthetic pulses without physical dwell time.
-						if (st.LastFreshAttackCommand >= 0)
-						{
-							int deltaCmds = number - st.LastFreshAttackCommand;
-							if (deltaCmds is >= 1 and <= 2)
-							{
-								st.SyntheticInputAnomalies++;
-								_debug($"[Triggerbot] {Name(player)} detected impossible click cadence / synthetic input injection: {deltaCmds} ticks delta (cmd {st.LastFreshAttackCommand} -> {number}). Anomalies: {st.SyntheticInputAnomalies}.");
-
-								var now = DateTime.UtcNow;
-								if (st.SyntheticInputAnomalies >= 5 && (now - st.LastAnomalyAnnounce) >= TimeSpan.FromMinutes(2))
-								{
-									st.LastAnomalyAnnounce = now;
-									StatDetections++;
-									_announce(player, "SYNTHETIC_INPUT", $"Blizzard Overwatch state-machine anomaly: {st.SyntheticInputAnomalies} duplicate click transitions in <= 2 ticks (physically impossible mechanical debounce limit).");
-								}
-							}
-						}
-						st.LastFreshAttackCommand = number;
 					}
 				}
 			}
 
-			if (!AimMath.IsFinite(angles) || angles.X < -89.05f || angles.X > 89.05f || MathF.Abs(angles.Z) > 1.0f)
-				continue;
-
-			st.Commands.Add(new TriggerCommand
+			bool attackHeld = isFreshAttack;
+			try
 			{
-				CommandNumber = number,
-				Angles = angles,
-				IsFreshAttack = isFreshAttack
-			});
+				if (b.Accessor.HasField("buttons_pb"))
+					attackHeld = attackHeld || (b.ButtonsPb.Buttonstate1 & 1UL) != 0;
+			}
+			catch { }
 
-			if (st.Commands.Count > 128)
-				st.Commands.RemoveAt(0);
+			RecordCommand(player, number, b.ClientTick, angles, isFreshAttack, attackHeld, batchBurst);
 		}
 	}
 
-	public void OnSetupMove(IPlayer player, int commandNumber, int currentTick)
+	/// <summary>
+	/// Records a processed usercmd directly (supports both live hook processing and deterministic unit testing).
+	/// </summary>
+	internal void RecordCommand(
+		IPlayer player,
+		int commandNumber,
+		int clientTick,
+		QAngle angles,
+		bool isFreshAttack,
+		bool attackHeld = false,
+		bool isBatchBurst = false,
+		DateTime? nowOverride = null)
 	{
-		if (!_config.Enabled || !AimbotDetector.IsEligibleHuman(player) || !player.IsAlive)
+		if (!_config.Enabled || !AimbotDetector.IsEligibleHuman(player))
 			return;
 
 		int id = player.PlayerID;
 		if (id < 0 || id >= _players.Length)
 			return;
 
-		var pawn = player.PlayerPawn;
-		if (pawn is null)
+		var st = _players[id];
+
+		for (int ci = st.Commands.Count - 1; ci >= 0; ci--)
+		{
+			if (st.Commands[ci].CommandNumber == commandNumber)
+				return;
+			if (st.Commands[ci].CommandNumber < commandNumber)
+				break;
+		}
+
+		if (!AimMath.IsFinite(angles) || angles.X < -89.05f || angles.X > 89.05f || MathF.Abs(angles.Z) > 1.0f)
+			return;
+
+		DateTime now = nowOverride ?? DateTime.UtcNow;
+
+		if (isFreshAttack)
+		{
+			while (st.SyntheticAnomalyTimes.Count > 0 && (now - st.SyntheticAnomalyTimes.Peek()) >= SyntheticWindow)
+				st.SyntheticAnomalyTimes.Dequeue();
+
+			// Overwatch input state-machine hypothesis:
+			// Physical microswitches and human fingers cannot complete two full click cycles in <= 2 commands (<= 31.2ms).
+			// Exclude packet-choke command bursts and network-vetoed windows.
+			if (!isBatchBurst && st.LastFreshAttackCommand >= 0)
+			{
+				int deltaCmds = commandNumber - st.LastFreshAttackCommand;
+				if (deltaCmds is >= 1 and <= 2)
+				{
+					var net = _networkSafety?.Evaluate(id, now) ?? default;
+					if (!net.Vetoed)
+					{
+						st.SyntheticAnomalyTimes.Enqueue(now);
+						_debug($"[Triggerbot] {Name(player)} detected synthetic input cadence: {deltaCmds} ticks delta (cmd {st.LastFreshAttackCommand} -> {commandNumber}). Window anomalies: {st.SyntheticAnomalyTimes.Count}.");
+
+						if (st.SyntheticAnomalyTimes.Count >= 5 && (now - st.LastAnomalyAnnounce) >= TimeSpan.FromMinutes(2))
+						{
+							st.LastAnomalyAnnounce = now;
+							StatDetections++;
+							_announce(player, "SYNTHETIC_INPUT", $"Input state-machine anomaly: {st.SyntheticAnomalyTimes.Count} sub-2-tick duplicate click transitions within 60s (mechanical debounce violation).");
+							st.SyntheticAnomalyTimes.Clear();
+						}
+					}
+				}
+			}
+
+			st.LastFreshAttackCommand = commandNumber;
+		}
+
+		st.Commands.Add(new TriggerCommand
+		{
+			CommandNumber = commandNumber,
+			ClientTick = clientTick,
+			Angles = angles,
+			IsFreshAttack = isFreshAttack,
+			AttackHeld = attackHeld || isFreshAttack
+		});
+
+		if (st.Commands.Count > 128)
+			st.Commands.RemoveAt(0);
+	}
+
+	public void OnSetupMove(IPlayer player, int commandNumber, int currentTick)
+	{
+		if (!_config.Enabled || !AimbotDetector.IsEligibleHuman(player) || !PlayerSnapshotProvider.IsAlive(player))
+			return;
+
+		int id = player.PlayerID;
+		if (id < 0 || id >= _players.Length)
+			return;
+
+		if (!PlayerSnapshotProvider.TryGetPawnTransform(player, out _, out var eye, out var pawnEyeAngles, out _, out _, out _, out _, out _))
 			return;
 
 		var st = _players[id];
@@ -307,18 +406,22 @@ internal sealed class TriggerbotDetector
 		if (cmd == null && commandNumber <= st.LastCommandNumber)
 			return;
 
-		QAngle viewAngles = cmd != null ? cmd.Angles : pawn.EyeAngles;
+		QAngle viewAngles = cmd != null ? cmd.Angles : pawnEyeAngles;
 		bool isFreshAttack = cmd != null && cmd.IsFreshAttack;
+		bool attackHeld = cmd != null ? cmd.AttackHeld : isFreshAttack;
 		bool wasAlreadyAttacking = st.WasAttacking;
-		st.WasAttacking = isFreshAttack;
+		st.WasAttacking = attackHeld;
 
 		if (commandNumber <= st.LastCommandNumber)
 			return;
 
-		if (st.LastCommandNumber >= 0 && commandNumber - st.LastCommandNumber > 16)
+		// Reset active contact if command stream jumped (discontinuity > 1 command, matching CS2AC Legacy)
+		if (st.LastCommandNumber >= 0 && commandNumber - st.LastCommandNumber > 2)
 		{
 			st.ActiveTarget = -1;
 			st.ContactStartCommand = -1;
+			st.ContactAccumulatedSpeed = 0.0f;
+			st.ContactTickCount = 0;
 		}
 
 		st.LastCommandNumber = commandNumber;
@@ -331,49 +434,57 @@ internal sealed class TriggerbotDetector
 		}
 
 		float aimMovement = st.LastAnglesValid ? AimMath.AngularDistance(st.LastAngles, viewAngles) : 0.0f;
-		if (st.LastAnglesValid && float.IsFinite(aimMovement) && aimMovement <= HeldAngleMaximumDegrees)
-		{
-			st.AngleHoldingTicks++;
-		}
-		else
-		{
-			st.AngleHoldingTicks = 0;
-		}
+		if (!float.IsFinite(aimMovement))
+			aimMovement = 0.0f;
 
-		Vector origin = pawn.AbsOrigin ?? default;
-		Vector eye = pawn.EyePosition ?? new Vector(origin.X, origin.Y, origin.Z + 64.0f);
+		if (st.LastAnglesValid && aimMovement <= HeldAngleMaximumDegrees)
+			st.AngleHoldingTicks++;
+		else
+			st.AngleHoldingTicks = 0;
+
 		if (!AimMath.IsFinite(eye))
 			return;
 
 		StatContactChecks++;
-		var (targetIndex, hitPoint) = TraceCrosshair(player, eye, viewAngles);
+		var (targetIndex, hitPoint) = TraceCrosshair(player, eye, viewAngles, currentTick);
 
 		if (targetIndex != st.ActiveTarget)
 		{
 			st.ActiveTarget = targetIndex;
 			st.ContactStartCommand = -1;
+			st.ContactAccumulatedSpeed = 0.0f;
+			st.ContactTickCount = 0;
 
 			if (targetIndex >= 0)
 			{
-				// If the weapon was already discharging before target entered crosshair, discard (pre-firing / spray).
-				// Also check if the player was already in an active pre-fire tapping cadence (within last 16 ticks / 250ms).
-				bool isPrefiring = wasAlreadyAttacking || (st.LastFreshAttackCommand >= 0 && commandNumber - st.LastFreshAttackCommand <= 16);
-				if (isPrefiring)
-				{
-					st.ActiveMode = TriggerContactMode.AimDriven;
-				}
-				else
+				int previousContact = st.LastContactTick[targetIndex];
+				bool isFreshTargetContact = previousContact < 0 || (long)currentTick - previousContact >= FreshContactTicks;
+
+				// Pre-fire / active-spray guard:
+				// Only suppress acquisition if the player was already holding fire on the tick before contact,
+				// or clicked within the immediately preceding 2 commands (blind jitter-click spam).
+				bool isPrefiring = wasAlreadyAttacking;
+
+				if (!isPrefiring && isFreshTargetContact)
 				{
 					st.ContactStartCommand = commandNumber;
-					st.ActiveMode = st.AngleHoldingTicks >= 3 && aimMovement <= HeldAngleMaximumDegrees
+					st.AcquisitionSpeedDegPerTick = aimMovement;
+					st.ContactAccumulatedSpeed = aimMovement;
+					st.ContactTickCount = 1;
+					st.ActiveMode = st.AngleHoldingTicks >= 2 && aimMovement <= HeldAngleMaximumDegrees
 						? TriggerContactMode.TargetDriven
 						: TriggerContactMode.AimDriven;
 
 					StatAcquisitions++;
 					if (Utils.DebugMode)
-						_debug($"[Triggerbot] {Name(player)} acquired target #{targetIndex} (mode: {st.ActiveMode}, cmd: {commandNumber}, holdTicks: {st.AngleHoldingTicks}).");
+						_debug($"[Triggerbot] {Name(player)} acquired target #{targetIndex} (mode: {st.ActiveMode}, cmd: {commandNumber}, holdTicks: {st.AngleHoldingTicks}, speed: {aimMovement:F2}°/t).");
 				}
 			}
+		}
+		else if (targetIndex >= 0 && st.ContactStartCommand >= 0)
+		{
+			st.ContactAccumulatedSpeed += aimMovement;
+			st.ContactTickCount++;
 		}
 
 		if (targetIndex >= 0)
@@ -381,20 +492,35 @@ internal sealed class TriggerbotDetector
 			st.LastContactTick[targetIndex] = currentTick;
 		}
 
-		// Prune expired smokes
+		// Prune expired smokes without closure allocation
 		var now = DateTime.UtcNow;
-		_smokes.RemoveAll(s => s.Expires <= now);
+		for (int si = _smokes.Count - 1; si >= 0; si--)
+		{
+			if (_smokes[si].Expires <= now)
+				_smokes.RemoveAt(si);
+		}
 
 		bool smokeOccluded = now < _smokeStateUnknownUntil;
 		if (!smokeOccluded && targetIndex >= 0)
 		{
-			smokeOccluded = _smokes.Any(s => SegmentTouchesSmokeBounds(eye, hitPoint, s.Center));
+			for (int si = 0; si < _smokes.Count; si++)
+			{
+				if (SegmentTouchesSmokeBounds(eye, hitPoint, _smokes[si].Center))
+				{
+					smokeOccluded = true;
+					break;
+				}
+			}
 		}
 
 		if (isFreshAttack && targetIndex >= 0 && st.ContactStartCommand >= 0)
 		{
 			int reactionTicks = commandNumber - st.ContactStartCommand;
-			if (!smokeOccluded)
+			float meanContactSpeed = st.ContactTickCount > 0
+				? st.ContactAccumulatedSpeed / st.ContactTickCount
+				: aimMovement;
+
+			if (!smokeOccluded && reactionTicks >= 0)
 			{
 				st.Pending.Add(new TriggerPendingAttack
 				{
@@ -402,7 +528,9 @@ internal sealed class TriggerbotDetector
 					TargetIndex = targetIndex,
 					ReactionTicks = reactionTicks,
 					Mode = st.ActiveMode,
-					SyntheticAnomalies = st.SyntheticInputAnomalies
+					AcquisitionSpeedDegPerTick = st.AcquisitionSpeedDegPerTick,
+					FireSpeedDegPerTick = aimMovement,
+					MeanContactSpeedDegPerTick = meanContactSpeed
 				});
 
 				while (st.Pending.Count > PendingLimit)
@@ -410,14 +538,14 @@ internal sealed class TriggerbotDetector
 
 				StatPendingAttacks++;
 				if (Utils.DebugMode)
-					_debug($"[Triggerbot] {Name(player)} attack pressed: reaction {reactionTicks} ticks on target #{targetIndex}.");
+					_debug($"[Triggerbot] {Name(player)} attack pressed: reaction {reactionTicks} ticks on target #{targetIndex} (mode={st.ActiveMode}, acqSpeed={st.AcquisitionSpeedDegPerTick:F2}°/t, fireSpeed={aimMovement:F2}°/t).");
 			}
-			else if (Utils.DebugMode)
+			else if (Utils.DebugMode && smokeOccluded)
 			{
 				_debug($"[Triggerbot] {Name(player)} attack ignored due to smoke occlusion volume.");
 			}
 
-			// Clear ContactStartCommand so subsequent commands don't record stale reactions
+			// Clear ContactStartCommand so subsequent commands in the same contact don't record stale reactions
 			st.ContactStartCommand = -1;
 		}
 
@@ -430,16 +558,16 @@ internal sealed class TriggerbotDetector
 		// Intentional no-op:
 		// Triggerbot initiation is strictly evaluated on fresh clicks (cmd.IsFreshAttack in OnSetupMove).
 		// Creating pending attacks from weapon_fire during automatic fire cycles leads to false positives
-		// when holding spray through doorways or corners (bullet #7 discharging 1-6 ticks after an enemy walks into the spray).
+		// when holding spray through doorways or corners.
 	}
 
-	public void OnPlayerHurt(IPlayer attacker, IPlayer victim, string weapon, int damage, int? commandNumber)
+	public void OnPlayerHurt(IPlayer attacker, IPlayer victim, string weapon, int damage, int? commandNumber, DateTime? nowOverride = null)
 	{
 		if (!_config.Enabled || !AimbotDetector.IsEligibleHuman(attacker) || !victim.IsValid || damage <= 0)
 			return;
 
 		int attackerId = attacker.PlayerID;
-		if (attackerId < 0 || attackerId >= _players.Length)
+		if (attackerId < 0 || attackerId >= _players.Length || attackerId == victim.PlayerID)
 			return;
 
 		var st = _players[attackerId];
@@ -464,42 +592,31 @@ internal sealed class TriggerbotDetector
 			return;
 
 		string normWeapon = weapon.StartsWith("weapon_", StringComparison.OrdinalIgnoreCase) ? weapon[7..] : weapon;
-		if (!BallisticWeapons.Contains(normWeapon) || pendingMatch.ReactionTicks < 0)
+		if (!BallisticWeapons.Contains(normWeapon) || normWeapon.Equals("revolver", StringComparison.OrdinalIgnoreCase) || normWeapon.Equals("taser", StringComparison.OrdinalIgnoreCase) || pendingMatch.ReactionTicks < 0)
 			return;
+
+		DateTime now = nowOverride ?? DateTime.UtcNow;
 
 		// Discard pending reactions older than 0.75 seconds to avoid matching delayed hits with obsolete clicks
-		if ((DateTime.UtcNow - pendingMatch.CreatedAt).TotalSeconds > 0.75)
+		if ((now - pendingMatch.CreatedAt).TotalSeconds > 0.75 && nowOverride == null)
 			return;
 
-		// Triggerbot evaluation across contact modes:
-		// 1. TargetDriven (holding angle, target crosses crosshair):
-		//    Normal human visual reaction is 150-250ms (Vanguard baseline: MIN_HUMAN_REACTION = 150ms).
-		//    Flags reactions <= MaxReactionTimeMs (default: 90ms / ~5.7 ticks).
-		// 2. AimDriven (player aims/swipes onto target):
-		//    Human pre-planned motor movement clicks during/after crosshair acquisition.
-		//    To prevent false positives on legitimate flick shots while catching external triggerbots:
-		//    - Instant contact click: ReactionTicks <= 1 (<= 15.6ms delta from first contact tick; physically impossible human reaction), OR
-		//    - Synthetic input anomaly present: Overwatch reverse-engineered click cadence anomaly (deltaCmds <= 2 ticks).
-		float reactionMs = pendingMatch.ReactionTicks * (1000.0f / 64.0f);
-		bool isUnnaturalReaction;
-		if (pendingMatch.Mode == TriggerContactMode.TargetDriven)
+		// Shared Network Safety Gate (ported from CS2AC Legacy):
+		// Defer timing-sensitive scoring when the player experiences high ping, jitter, loss, choke, or command bursts.
+		if (_networkSafety != null)
 		{
-			isUnnaturalReaction = reactionMs <= _config.MaxReactionTimeMs;
-		}
-		else // AimDriven
-		{
-			isUnnaturalReaction = pendingMatch.ReactionTicks <= 1 || pendingMatch.SyntheticAnomalies > 0;
-		}
-
-		if (!isUnnaturalReaction)
-		{
-			if (Utils.DebugMode)
-				_debug($"[Triggerbot] {Name(attacker)} normal human reaction: {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms, mode: {pendingMatch.Mode}) on #{victim.PlayerID}.");
-			return;
+			var net = _networkSafety.Evaluate(attackerId, now);
+			if (net.Vetoed)
+			{
+				StatNetworkVetoes++;
+				if (Utils.DebugMode)
+					_debug($"[Triggerbot] {Name(attacker)} {pendingMatch.ReactionTicks}-tick shot deferred by NetworkSafety ({net.FormatSummary()}).");
+				return;
+			}
 		}
 
 		// Verify direct line-of-sight at damage resolution to reject wallbang / penetration shots
-		if (_config.EnableNativeTrace)
+		if (_config.EnableNativeTrace && _traceManager != null)
 		{
 			try
 			{
@@ -541,18 +658,54 @@ internal sealed class TriggerbotDetector
 			catch { }
 		}
 
-		var now = DateTime.UtcNow;
 		ulong steamId = attacker.SteamID;
-		if (steamId > 0 && st.Incidents.Count == 0)
+		if (steamId > 0 && st.Incidents.Count == 0 && st.ReactionHistory.Count == 0 && st.EvidenceScore <= 0.0f)
 		{
-			if (_persistentIncidents.TryGetValue(steamId, out var cached))
+			if (_persistentState.TryGetValue(steamId, out var cached))
 			{
-				cached.RemoveAll(i => now - i.Time >= EvidenceWindow);
-				st.Incidents.AddRange(cached);
+				cached.Incidents.RemoveAll(i => now - i.Time >= EvidenceWindow);
+				cached.History.RemoveAll(h => now - h.Time >= EvidenceWindow);
+				st.Incidents.AddRange(cached.Incidents);
+				st.ReactionHistory.AddRange(cached.History);
+				st.EvidenceScore = cached.Incidents.Count > 0 ? cached.Score : 0.0f;
 			}
 		}
 
 		st.Incidents.RemoveAll(i => now - i.Time >= EvidenceWindow);
+		st.ReactionHistory.RemoveAll(h => now - h.Time >= EvidenceWindow);
+
+		st.ReactionHistory.Add((now, pendingMatch.ReactionTicks, pendingMatch.Mode));
+		while (st.ReactionHistory.Count > HistoryLimit)
+			st.ReactionHistory.RemoveAt(0);
+
+		// Compute reaction-time variance across sub-human reaction window (<= MIN_HUMAN_REACTION = 150ms / 9 ticks)
+		float varianceTicks = ComputeFastReactionVariance(st.ReactionHistory, out int fastSampleCount, out float meanFastTicks, out float normalizedVariance, out float cvPercent);
+		bool isMacroVariance = fastSampleCount >= 4 && normalizedVariance <= AimMath.Baselines.MacroVarianceThreshold;
+		bool lowVarianceConsistency = fastSampleCount >= 4 &&
+			(varianceTicks <= 0.65f || normalizedVariance <= AimMath.Baselines.MinClickVariance || cvPercent <= AimMath.Baselines.PatternVariancePercent) &&
+			meanFastTicks <= AimMath.Baselines.MinHumanReactionTicks;
+
+		float reactionMs = pendingMatch.ReactionTicks * (1000.0f / 64.0f);
+		int maxUnnaturalTicks = Math.Max(1, (int)MathF.Floor(_config.MaxReactionTimeMs / (1000.0f / 64.0f)));
+		float pointsDelta = EvaluateShotPoints(pendingMatch, maxUnnaturalTicks, lowVarianceConsistency, isMacroVariance);
+
+		if (pointsDelta <= 0.0f)
+		{
+			if (pointsDelta < 0.0f && st.EvidenceScore > 0.0f)
+			{
+				st.EvidenceScore = MathF.Max(0.0f, st.EvidenceScore + pointsDelta);
+				StatNormalDecay++;
+				if (steamId > 0)
+					_persistentState[steamId] = (st.EvidenceScore, new List<TriggerIncident>(st.Incidents), new List<(DateTime, int, TriggerContactMode)>(st.ReactionHistory));
+			}
+
+			if (Utils.DebugMode)
+				_debug($"[Triggerbot] {Name(attacker)} normal reaction: {pendingMatch.ReactionTicks}t (~{reactionMs:F1}ms, mode={pendingMatch.Mode}, score={st.EvidenceScore:F1}).");
+			return;
+		}
+
+		st.EvidenceScore = MathF.Min(MaxEvidenceScore, st.EvidenceScore + pointsDelta);
+		float targetScoreThreshold = MathF.Max(2.5f, _config.EvidenceThreshold * 2.5f);
 
 		st.Incidents.Add(new TriggerIncident
 		{
@@ -563,68 +716,150 @@ internal sealed class TriggerbotDetector
 			Weapon = normWeapon,
 			Damage = damage,
 			Mode = pendingMatch.Mode,
-			SyntheticAnomalies = pendingMatch.SyntheticAnomalies
+			PointsAwarded = pointsDelta,
+			ResultingScore = st.EvidenceScore
 		});
 
 		if (steamId > 0)
 		{
-			_persistentIncidents[steamId] = new List<TriggerIncident>(st.Incidents);
+			_persistentState[steamId] = (st.EvidenceScore, new List<TriggerIncident>(st.Incidents), new List<(DateTime, int, TriggerContactMode)>(st.ReactionHistory));
 		}
 
 		if (Utils.DebugMode)
-			_debug($"[Triggerbot] {Name(attacker)} unnatural command delta: {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms cmd interval, mode: {pendingMatch.Mode}) on #{victim.PlayerID} dealing {damage} dmg. Evidence: {st.Incidents.Count}/{_config.EvidenceThreshold}.");
+			_debug($"[Triggerbot] {Name(attacker)} suspicious reaction: {pendingMatch.ReactionTicks}t (~{reactionMs:F1}ms, mode={pendingMatch.Mode}, +{pointsDelta:F1}pts, var={varianceTicks:F2}t², normVar={normalizedVariance:F4}, cv={cvPercent:F1}%). Score: {st.EvidenceScore:F1}/{targetScoreThreshold:F1}.");
 
-		if (st.Incidents.Count >= _config.EvidenceThreshold)
+		if (st.EvidenceScore >= targetScoreThreshold && st.Incidents.Count >= Math.Max(2, _config.EvidenceThreshold - 1))
 		{
 			StatDetections++;
-
-			// Vanguard MACRO_TRESHOLD / MIN_CLICK_VARIANCE verification:
-			// Real human reaction cadence exhibits biological variance (>0.05).
-			// Mechanical triggerbots and auto-clickers execute with near-zero timing variance (<0.01).
-			float meanTicks = 0.0f;
-			for (int i = 0; i < st.Incidents.Count; i++)
-				meanTicks += st.Incidents[i].ReactionTicks;
-			meanTicks /= st.Incidents.Count;
-
-			float varianceTicks = 0.0f;
-			for (int i = 0; i < st.Incidents.Count; i++)
-			{
-				float diff = st.Incidents[i].ReactionTicks - meanTicks;
-				varianceTicks += diff * diff;
-			}
-			varianceTicks /= st.Incidents.Count;
 
 			var lines = new List<string>();
 			for (int i = 0; i < st.Incidents.Count; i++)
 			{
 				var inc = st.Incidents[i];
-				lines.Add($"{i + 1}. {inc.ReactionTicks} ticks (~{inc.ReactionMs:F1}ms cmd interval) - {inc.Mode} ({inc.Weapon}, {inc.Damage} dmg)");
+				lines.Add($"{i + 1}. {inc.ReactionTicks} ticks (~{inc.ReactionMs:F1}ms) - {inc.Mode} (+{inc.PointsAwarded:F1}pts, {inc.Weapon}, {inc.Damage} dmg)");
 			}
 
-			string macroTag = varianceTicks < 0.05f
-				? $" (Machine-like cadence: timing variance {varianceTicks:F3} < 0.05 Vanguard benchmark)"
+			string macroTag = lowVarianceConsistency
+				? $" [FIXED-DELAY CADENCE: variance {varianceTicks:F2}t² (normVar={normalizedVariance:F4}, CV={cvPercent:F1}% < {AimMath.Baselines.PatternVariancePercent:F2}%) across {fastSampleCount} hits, mean {meanFastTicks:F1}t]"
 				: "";
 
-			string anomalyTag = st.SyntheticInputAnomalies > 0
-				? $" (Overwatch input anomaly: {st.SyntheticInputAnomalies} impossible double-click pulses detected)"
-				: "";
-
-			string latest = $"Latest damaging shot: command-to-acquisition delta of {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms cmd interval, mode: {pendingMatch.Mode}){macroTag}{anomalyTag}. Evidence {st.Incidents.Count}/{_config.EvidenceThreshold} in 5 min.";
-
+			string latest = $"Latest damaging shot: {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms, mode: {pendingMatch.Mode}){macroTag}. Rolling score {st.EvidenceScore:F1}/{targetScoreThreshold:F1} across {st.ReactionHistory.Count} evaluated contacts.";
 			string evidence = string.Join("\n", lines) + "\n" + latest;
 
 			_announce(attacker, "TRIGGERBOT", evidence);
+			st.EvidenceScore = 0.0f;
 			st.Incidents.Clear();
+			st.ReactionHistory.Clear();
 			if (steamId > 0)
-				_persistentIncidents.Remove(steamId);
+				_persistentState.Remove(steamId);
 		}
 	}
 
-	private (int TargetIndex, Vector HitPoint) TraceCrosshair(IPlayer player, in Vector eye, in QAngle angles)
+	private static float ComputeFastReactionVariance(
+		List<(DateTime Time, int ReactionTicks, TriggerContactMode Mode)> history,
+		out int sampleCount,
+		out float meanTicks,
+		out float normalizedVariance,
+		out float cvPercent)
+	{
+		sampleCount = 0;
+		meanTicks = 0.0f;
+		normalizedVariance = 999.0f;
+		cvPercent = 999.0f;
+		float sum = 0.0f;
+
+		for (int i = 0; i < history.Count; i++)
+		{
+			int rt = history[i].ReactionTicks;
+			if (rt is >= 0 and <= 10)
+			{
+				sum += rt;
+				sampleCount++;
+			}
+		}
+
+		if (sampleCount < 2)
+			return 999.0f;
+
+		meanTicks = sum / sampleCount;
+		float varSum = 0.0f;
+		for (int i = 0; i < history.Count; i++)
+		{
+			int rt = history[i].ReactionTicks;
+			if (rt is >= 0 and <= 10)
+			{
+				float diff = rt - meanTicks;
+				varSum += diff * diff;
+			}
+		}
+
+		float varianceTicks = varSum / sampleCount;
+		float denom = MathF.Max(1.0f, meanTicks * meanTicks);
+		normalizedVariance = varianceTicks / denom;
+		cvPercent = (MathF.Sqrt(varianceTicks) / MathF.Max(1.0f, meanTicks)) * 100.0f;
+		return varianceTicks;
+	}
+
+	private static float EvaluateShotPoints(
+		TriggerPendingAttack attack,
+		int maxUnnaturalTicks,
+		bool lowVarianceConsistency,
+		bool isMacroVariance)
+	{
+		int rt = attack.ReactionTicks;
+		float macroBonus = isMacroVariance ? 0.5f : 0.0f;
+
+		if (attack.Mode == TriggerContactMode.TargetDriven)
+		{
+			if (rt <= 1)
+				return (lowVarianceConsistency ? 3.5f : 3.0f) + macroBonus;
+			if (rt <= 3)
+				return (lowVarianceConsistency ? 3.0f : 2.5f) + macroBonus;
+			if (rt <= maxUnnaturalTicks)
+				return (lowVarianceConsistency ? 2.5f : 2.0f) + macroBonus;
+			if (rt <= AimMath.Baselines.MinHumanReactionTicks && lowVarianceConsistency)
+				return 2.0f + macroBonus;
+			if (rt >= AimMath.Baselines.MinHumanReactionTicks)
+				return -3.0f; // Normal human reaction (>= 150ms floor) decays score
+			return -1.0f;
+		}
+		else // AimDriven (moving crosshair, peeking, micro-adjusting)
+		{
+			// Distinguish high-speed ballistic flicks from controlled aim / external triggerbots
+			bool isFastBallisticFlick = attack.AcquisitionSpeedDegPerTick > 8.5f && attack.FireSpeedDegPerTick > 4.5f;
+
+			if (rt <= 1)
+			{
+				if (!isFastBallisticFlick)
+					return (lowVarianceConsistency ? 3.0f : 2.5f) + macroBonus;
+				return lowVarianceConsistency ? 2.0f + macroBonus : 0.0f;
+			}
+
+			if (rt <= maxUnnaturalTicks)
+			{
+				// External triggerbots with 2-5 ticks (31-78ms) pipeline/humanizer delay during normal mouse movement:
+				// If the crosshair dwelled on or tracked the target (controlled speed) or exhibits low timing variance, score it!
+				bool controlledTrackingOrPeek = attack.MeanContactSpeedDegPerTick <= 5.0f && attack.FireSpeedDegPerTick <= 4.0f;
+				if (lowVarianceConsistency)
+					return 2.5f + macroBonus;
+				if (controlledTrackingOrPeek)
+					return 2.0f;
+				return 0.0f;
+			}
+
+			if (rt <= AimMath.Baselines.MinHumanReactionTicks && lowVarianceConsistency)
+				return 2.0f + macroBonus;
+
+			if (rt >= 7)
+				return -2.5f; // Normal reaction decays score
+
+			return 0.0f;
+		}
+	}
+
+	private (int TargetIndex, Vector HitPoint) TraceCrosshair(IPlayer player, in Vector eye, in QAngle angles, int currentTick)
 	{
 		var pawn = player.PlayerPawn;
-		if (pawn is null)
-			return (-1, Vector.Zero);
 
 		Vector forward = AimMath.Forward(angles);
 		Vector end = new(
@@ -632,75 +867,52 @@ internal sealed class TriggerbotDetector
 			eye.Y + forward.Y * TraceLength,
 			eye.Z + forward.Z * TraceLength);
 
-		// Fast-pass: Pure geometric cylinder intersection (100% managed C#, zero native calls, zero crash risk)
 		int bestTarget = -1;
 		float bestDist = float.MaxValue;
 		Vector bestPoint = end;
 
-		const float playerRadius = 18.0f; // CS2 player hull radius (16 + 2 tolerance)
-		const float radiusSq = playerRadius * playerRadius;
+		int attackerId = player.PlayerID;
+		PositionFrame? snapshotFrame = _findFrame?.Invoke(currentTick);
 
 		for (int i = 0; i < AimbotDetector.MaxPlayers; i++)
 		{
-			var target = _getPlayer(i);
-			if (target is not { IsValid: true } || target.PlayerID == player.PlayerID)
+			if (i == attackerId)
 				continue;
 
-			if (!target.IsAlive || !_areEnemies(player.PlayerID, target.PlayerID))
-				continue;
+			Vector origin;
+			bool crouched = false;
 
-			var targetPawn = target.PlayerPawn;
-			if (targetPawn is null || !targetPawn.IsValid)
-				continue;
-
-			Vector? maybeOrigin = targetPawn.AbsOrigin;
-			if (!maybeOrigin.HasValue || !AimMath.IsFinite(maybeOrigin.Value))
-				continue;
-
-			Vector origin = maybeOrigin.Value;
-
-			// Exact 3D ray to vertical cylinder closest-approach calculation:
-			// Eliminates pitch / elevation projection distortion where aiming at head or from high ground missed cylinder boundaries.
-			float vxySq = forward.X * forward.X + forward.Y * forward.Y;
-			float t;
-			if (vxySq > 1e-4f)
+			if (snapshotFrame != null)
 			{
-				t = ((origin.X - eye.X) * forward.X + (origin.Y - eye.Y) * forward.Y) / vxySq;
+				ref readonly var tp = ref snapshotFrame.Players[i];
+				if (!tp.Valid || !tp.Alive || !_areEnemies(attackerId, i))
+					continue;
+				origin = tp.Origin;
+				crouched = tp.Crouched;
 			}
 			else
 			{
-				// Looking nearly straight up or straight down (+/- 90 pitch)
-				t = Math.Abs(forward.Z) > 1e-4f ? (origin.Z + 46.0f - eye.Z) / forward.Z : 0.0f;
+				var target = _getPlayer(i);
+				if (target is null || !target.IsValid || !PlayerSnapshotProvider.IsAlive(target) || !_areEnemies(attackerId, target.PlayerID))
+					continue;
+
+				if (!PlayerSnapshotProvider.TryGetPawnTransform(target, out origin, out _, out _, out _, out _, out crouched, out _, out _))
+					continue;
 			}
 
-			if (t < 20.0f || t >= bestDist)
+			if (!IntersectsAnatomicalHitbox(eye, forward, origin, crouched, bestDist, out float hitDist, out Vector hitPt))
 				continue;
 
-			float px = eye.X + forward.X * t;
-			float py = eye.Y + forward.Y * t;
-			float pz = eye.Z + forward.Z * t;
-
-			if (pz < origin.Z - 4.0f || pz > origin.Z + 76.0f)
-				continue;
-
-			float latX = px - origin.X;
-			float latY = py - origin.Y;
-			float latDistSq = latX * latX + latY * latY;
-
-			if (latDistSq <= radiusSq)
-			{
-				bestDist = t;
-				bestTarget = target.PlayerID;
-				bestPoint = new Vector(px, py, pz);
-			}
+			bestDist = hitDist;
+			bestTarget = i;
+			bestPoint = hitPt;
 		}
 
 		if (bestTarget < 0)
 			return (-1, end);
 
 		// Verified line-of-sight check against world geometry (MaskTrace.Solid)
-		// Safety rule: Never assume visibility through walls; verify world line of sight from in front of attacker.
-		if (_config.EnableNativeTrace)
+		if (_config.EnableNativeTrace && _traceManager != null)
 		{
 			try
 			{
@@ -712,21 +924,93 @@ internal sealed class TriggerbotDetector
 				var traceParams = new TraceParams
 				{
 					InteractWith = MaskTrace.Solid,
-					EntitiesToIgnore = pawn is { IsValid: true } ? new List<SwiftlyS2.Shared.SchemaDefinitions.CEntityInstance> { pawn } : new List<SwiftlyS2.Shared.SchemaDefinitions.CEntityInstance>()
+					EntitiesToIgnore = pawn is { IsValid: true }
+						? new List<SwiftlyS2.Shared.SchemaDefinitions.CEntityInstance> { pawn }
+						: new List<SwiftlyS2.Shared.SchemaDefinitions.CEntityInstance>()
 				};
 
 				var trace = _traceManager.TraceShapeLine(traceStart, traceEnd, traceParams);
 				if (trace.DidHit && !trace.StartInSolid && trace.Distance < traceLen - 16.0f)
 				{
-					// Occluded by solid world geometry / wall
 					return (-1, trace.EndPos);
 				}
 			}
 			catch { }
 		}
 
-		// Clear direct line of sight confirmed
 		return (bestTarget, bestPoint);
+	}
+
+	/// <summary>
+	/// Evaluates ray intersection against a crouch-aware 3-zone anatomical hitbox model (head sphere, torso/arms cylinder, legs cylinder).
+	/// Prevents false early contacts in empty air beside the head and over crouched players while catching torso/limb shots.
+	/// </summary>
+	internal static bool IntersectsAnatomicalHitbox(
+		in Vector eye,
+		in Vector forward,
+		in Vector origin,
+		bool crouched,
+		float maxDistance,
+		out float hitDistance,
+		out Vector hitPoint)
+	{
+		hitDistance = float.MaxValue;
+		hitPoint = default;
+
+		float vxySq = forward.X * forward.X + forward.Y * forward.Y;
+		float t;
+		if (vxySq > 1e-4f)
+		{
+			t = ((origin.X - eye.X) * forward.X + (origin.Y - eye.Y) * forward.Y) / vxySq;
+		}
+		else
+		{
+			float centerZ = crouched ? 32.0f : 46.0f;
+			t = MathF.Abs(forward.Z) > 1e-4f ? (origin.Z + centerZ - eye.Z) / forward.Z : 0.0f;
+		}
+
+		if (t < 20.0f || t >= maxDistance)
+			return false;
+
+		float px = eye.X + forward.X * t;
+		float py = eye.Y + forward.Y * t;
+		float pz = eye.Z + forward.Z * t;
+		float relZ = pz - origin.Z;
+
+		float topZ = crouched ? 54.0f : 72.0f;
+		if (relZ < -2.0f || relZ > topZ)
+			return false;
+
+		float latX = px - origin.X;
+		float latY = py - origin.Y;
+		float latDistSq = latX * latX + latY * latY;
+
+		float headStartZ = crouched ? 40.0f : 56.0f;
+		float torsoStartZ = crouched ? 18.0f : 28.0f;
+
+		float allowedRadius;
+		if (relZ >= headStartZ)
+		{
+			// Head & neck zone: tighter 9.0u radius to prevent early contact in empty air beside the ears
+			allowedRadius = 9.0f;
+		}
+		else if (relZ >= torsoStartZ)
+		{
+			// Torso, shoulders, and weapon-holding arms
+			allowedRadius = 17.5f;
+		}
+		else
+		{
+			// Legs / pelvis
+			allowedRadius = 14.0f;
+		}
+
+		if (latDistSq > allowedRadius * allowedRadius)
+			return false;
+
+		hitDistance = t;
+		hitPoint = new Vector(px, py, pz);
+		return true;
 	}
 
 	private static bool SegmentTouchesSmokeBounds(in Vector start, in Vector end, in Vector center)

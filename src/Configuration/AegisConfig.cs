@@ -14,14 +14,14 @@ public enum PunishmentType
 }
 
 /// <summary>
-/// Configuration for the Aimbot detection module.
+/// Configuration for the Aimbot, RCS, Doubletap, Inhuman Accuracy, and Irregular Behavior detection module.
 /// </summary>
 public sealed class AimbotConfig
 {
 	[Description("Enable or disable the aimbot detection module.")]
 	public bool Enabled { get; set; } = true;
 
-	[Description("Punishment applied when aimbot is detected: 'none', 'kick', or 'ban'.")]
+	[Description("Punishment applied when aimbot is detected: 'none', 'kick', or 'ban'. Keep 'none' during calibration.")]
 	[JsonConverter(typeof(JsonStringEnumConverter))]
 	public PunishmentType Punishment { get; set; } = PunishmentType.None;
 
@@ -31,33 +31,88 @@ public sealed class AimbotConfig
 	[Description("Minimum single-tick snap angle in degrees required to trigger convergence aimbot detection (calibrated P99+ margin).")]
 	public float SnapAngleThreshold { get; set; } = 26.0f;
 
-	[Description("Minimum total angular movement in degrees required for smooth aimbot trajectory detection.")]
+	[Description("Minimum total angular movement in degrees required for standard smooth aimbot trajectory detection.")]
 	public float SmoothMinimumMovement { get; set; } = 12.0f;
+
+	[Description("Minimum total angular movement in degrees required for low-FOV closet smooth aimbot trajectory detection.")]
+	public float LowFovSmoothMinimumMovement { get; set; } = 3.5f;
 
 	[Description("Minimum path efficiency ratio (0.0 to 1.0) required for smooth aimbot trajectory detection.")]
 	public float SmoothMinimumPathEfficiency { get; set; } = 0.96f;
+
+	[Description("Enable No-Recoil / RCS macro spray pattern detection (RECOIL_THRESHOLD >= 0.80 & PATTERN_VARIANCE < 8.157%).")]
+	public bool EnableRcsCheck { get; set; } = true;
+
+	[Description("Enable sustained inhuman accuracy detection (PREDICTION_THRESHOLD >= 95% hit rate across >= 35 aimed shots at >= 100u).")]
+	public bool EnableInhumanAccuracyCheck { get; set; } = true;
+
+	[Description("Enable irregular combat behavior detection (repeated airborne and sniper no-scope kills at >= 10m).")]
+	public bool EnableIrregularBehaviorCheck { get; set; } = true;
+
+	[Description("Enable doubletap / rapid-fire exploit detection comparing weapon fire intervals against minimum weapon cycle times.")]
+	public bool EnableDoubletap { get; set; } = true;
+
+	[Description("Enable sub-tick silent-aim evaluation within the Aimbot pipeline (also configurable via the dedicated SilentAim section).")]
+	public bool EnableSilentAim { get; set; } = true;
+
+	[Description("Enable anti-aim evaluation (also configurable via the dedicated AntiAim section).")]
+	public bool EnableAntiAim { get; set; } = true;
 }
 
 /// <summary>
-/// Configuration for the Triggerbot detection module.
+/// Configuration for the dedicated Silent Aim &amp; Snap-Return detection module.
+/// </summary>
+public sealed class SilentAimConfig
+{
+	[Description("Enable or disable the Silent Aim & Snap-Return detection module.")]
+	public bool Enabled { get; set; } = true;
+
+	[Description("Punishment applied when Silent Aim is detected: 'none', 'kick', or 'ban'. Keep 'none' during calibration.")]
+	[JsonConverter(typeof(JsonStringEnumConverter))]
+	public PunishmentType Punishment { get; set; } = PunishmentType.None;
+
+	[Description("Accumulated weighted point threshold required to trigger a sub-tick Silent Aim detection (default: 10.0).")]
+	public float ScoreThreshold { get; set; } = 10.0f;
+
+	[Description("Enable sub-tick Silent Aim detection comparing base viewangles against attack1_start_history_index angles, weapon spread, and sub-tick mouse travel.")]
+	public bool EnableSubtickSilentAim { get; set; } = true;
+
+	[Description("Enable post-shot Snap-Return detection catching 1-tick silent snaps that return to the prior view angle on the next command.")]
+	public bool EnableSnapReturn { get; set; } = true;
+
+	[Description("Minimum 1-tick snap angle in degrees required for Snap-Return detection (default: 6.0).")]
+	public float SnapReturnMinimumAngle { get; set; } = 6.0f;
+
+	[Description("Maximum angular difference in degrees between pre-shot and post-shot camera angles for Snap-Return detection (default: 3.5).")]
+	public float SnapReturnMaximumSurroundingAngle { get; set; } = 3.5f;
+}
+
+/// <summary>
+/// Configuration for the Triggerbot &amp; Synthetic Input detection module.
 /// </summary>
 public sealed class TriggerbotConfig
 {
 	[Description("Enable or disable the triggerbot detection module.")]
 	public bool Enabled { get; set; } = true;
 
-	[Description("Punishment applied when triggerbot is detected: 'none', 'kick', or 'ban'.")]
+	[Description("Punishment applied when triggerbot is detected: 'none', 'kick', or 'ban'. Keep 'none' during calibration.")]
 	[JsonConverter(typeof(JsonStringEnumConverter))]
 	public PunishmentType Punishment { get; set; } = PunishmentType.None;
 
-	[Description("Number of unnatural triggerbot reaction incidents within 5 minutes required to punish (calibrated default: 4).")]
+	[Description("Number of unnatural triggerbot reaction incidents within 5 minutes required to punish (calibrated default: 4, equivalent to score 10).")]
 	public int EvidenceThreshold { get; set; } = 4;
 
 	[Description("Maximum reaction time in milliseconds considered an unnatural triggerbot reaction (calibrated default: 90ms).")]
 	public float MaxReactionTimeMs { get; set; } = 90.0f;
 
-	[Description("Verify direct world line-of-sight to crosshair targets using native physics raycasts. When disabled or if line-of-sight cannot be confirmed, targets behind potential geometry are safely ignored to eliminate wallbang false positives.")]
+	[Description("Verify direct world line-of-sight and hitboxes to crosshair targets using native physics raycasts.")]
 	public bool EnableNativeTrace { get; set; } = true;
+
+	[Description("Enable isolated sub-2-tick synthetic click-release-click injection detection (SYNTHETIC_INPUT).")]
+	public bool EnableSyntheticInputCheck { get; set; } = true;
+
+	[Description("Exclude shots fired through active smoke grenade volumes from triggerbot reaction scoring.")]
+	public bool EnableSmokeCheck { get; set; } = true;
 }
 
 /// <summary>
@@ -68,21 +123,80 @@ public sealed class AimlockConfig
 	[Description("Enable or disable the aimlock detection module.")]
 	public bool Enabled { get; set; } = true;
 
-	[Description("Punishment applied when aimlock is detected: 'none', 'kick', or 'ban'.")]
+	[Description("Punishment applied when aimlock is detected: 'none', 'kick', or 'ban'. Keep 'none' during calibration.")]
 	[JsonConverter(typeof(JsonStringEnumConverter))]
 	public PunishmentType Punishment { get; set; } = PunishmentType.None;
 
 	[Description("Number of sustained aimlock tracking incidents within 5 minutes required to punish (default: 3).")]
 	public int EvidenceThreshold { get; set; } = 3;
 
-	[Description("Duration in seconds of uninterrupted mechanical tracking required for an aimlock episode (calibrated default: 1.95s).")]
-	public float TrackingDurationSeconds { get; set; } = 1.95f;
+	[Description("Duration in seconds of uninterrupted mechanical tracking required for an aimlock episode (default: 1.0s for wall tracking).")]
+	public float TrackingDurationSeconds { get; set; } = 1.0f;
 
-	[Description("Minimum distance in units between player and target to evaluate tracking (default: 200.0 units from legacy).")]
-	public float MinimumDistance { get; set; } = 200.0f;
+	[Description("Minimum distance in units between player and target to evaluate tracking (default: 150.0 units).")]
+	public float MinimumDistance { get; set; } = 150.0f;
 
-	[Description("Minimum traversal in units the target must move across view to eliminate stationary false positives (default: 128.0 units from legacy).")]
+	[Description("Minimum traversal in units the target must move across view to eliminate stationary false positives (default: 128.0 units).")]
 	public float MinimumTargetTravel { get; set; } = 128.0f;
+
+	[Description("Require world geometry occlusion for aimlock tracking episodes so normal visible combat tracking is never false-flagged.")]
+	public bool RequireWallOcclusion { get; set; } = true;
+}
+
+/// <summary>
+/// Configuration for the Anti-Aim, Sub-Tick Integrity, and Movement Automation detection module.
+/// </summary>
+public sealed class AntiAimConfig
+{
+	[Description("Enable or disable the Anti-Aim, Sub-Tick Integrity, and Movement detection module.")]
+	public bool Enabled { get; set; } = true;
+
+	[Description("Punishment applied when Anti-Aim or Sub-Tick/Movement tampering is detected: 'none', 'kick', or 'ban'. Keep 'none' during calibration.")]
+	[JsonConverter(typeof(JsonStringEnumConverter))]
+	public PunishmentType Punishment { get; set; } = PunishmentType.None;
+
+	[Description("Enable deterministic ANTI_UNTRUSTED viewangle bounds checking (Pitch in [-89, +89], Roll ~ 0, finite NaN/Inf).")]
+	public bool EnableUntrustedCheck { get; set; } = true;
+
+	[Description("Enable multi-tier continuous Spinbot (720/1440/2880 deg/s) and alternating Yaw Jitter detection.")]
+	public bool EnableSpinbotCheck { get; set; } = true;
+
+	[Description("Enable CSubtickMoveStep integrity and InvalidInput button-state consistency verification.")]
+	public bool EnableSubtickIntegrityCheck { get; set; } = true;
+
+	[Description("Enable Desubtick detection when >= 90% of non-analog subtick moves have fractional timing flattened to 0.0.")]
+	public bool EnableDesubtickCheck { get; set; } = true;
+
+	[Description("Enable automated movement script detection (AutoStrafe yaw symmetry, frame-perfect Bhop, and airborne Nulls / Snap-Tap).")]
+	public bool EnableMovementChecks { get; set; } = true;
+
+	[Description("Enable NameChanger spam detection (>= 5 visible name changes within 60 seconds).")]
+	public bool EnableNameChangerCheck { get; set; } = true;
+
+	[Description("Consecutive frame-perfect bunnyhop landings (after >= 4 air ticks) required to flag Bhop automation (default: 10).")]
+	public int BhopStreakThreshold { get; set; } = 10;
+
+	[Description("Consecutive airborne 0.00ms opposite-direction strafe transitions (A <-> D) required to flag Nulls / Snap-Tap (default: 64).")]
+	public int NullsStreakThreshold { get; set; } = 64;
+}
+
+/// <summary>
+/// Configuration for the Client Event Subscription / DLL Injection detection module.
+/// </summary>
+public sealed class DllInjectionConfig
+{
+	[Description("Enable or disable the Client Event Subscription (DLL Injection) scanner module.")]
+	public bool Enabled { get; set; } = true;
+
+	[Description("Punishment applied when blacklisted cheat event subscriptions are detected: 'none', 'kick', or 'ban'. Keep 'none' during calibration.")]
+	[JsonConverter(typeof(JsonStringEnumConverter))]
+	public PunishmentType Punishment { get; set; } = PunishmentType.None;
+
+	[Description("Initial delay in seconds after a player connects before running their first event subscription scan (default: 10.0s).")]
+	public float InitialScanDelaySeconds { get; set; } = 10.0f;
+
+	[Description("Interval in seconds between recurring event subscription scans per player (default: 120.0s).")]
+	public float ScanIntervalSeconds { get; set; } = 120.0f;
 }
 
 /// <summary>
@@ -105,23 +219,32 @@ public sealed class AegisConfig
 	[Description("Unique identifier for this server instance in Discord alerts and logs.")]
 	public string ServerId { get; set; } = "cs2-server-1";
 
-	[Description("Global debug mode for Aegis Anti-Cheat. Enables diagnostic console messages and in-game debug announcements.")]
+	[Description("Global debug mode for Aegis Anti-Cheat. Enables diagnostic console messages and in-game status commands.")]
 	public bool Debug { get; set; } = false;
 
-	[Description("Server console command template executed for kicking. Available placeholders: {userid}, {steamid}, {name}, {reason}.")]
+	[Description("Server console command template executed for kicking. Available placeholders: {userid}, {slot}, {steamid}, {name}, {reason}.")]
 	public string KickCommand { get; set; } = "sw_kick #{userid} \"[AegisAC] {reason}\"";
 
 	[Description("Server console command template executed for banning. Available placeholders: {userid}, {slot}, {steamid}, {name}, {reason}.")]
 	public string BanCommand { get; set; } = "sw_ban #{userid} 0 \"[AegisAC] {reason}\"; kickid {userid} \"[AegisAC] {reason}\"";
 
-	[Description("Aimbot detector module configuration.")]
+	[Description("Aimbot, RCS, Doubletap, Inhuman Accuracy, and Irregular Behavior detector configuration.")]
 	public AimbotConfig Aimbot { get; set; } = new();
 
-	[Description("Triggerbot detector module configuration.")]
+	[Description("Silent Aim and Snap-Return detector configuration.")]
+	public SilentAimConfig SilentAim { get; set; } = new();
+
+	[Description("Triggerbot and Synthetic Input detector configuration.")]
 	public TriggerbotConfig Triggerbot { get; set; } = new();
 
-	[Description("Aimlock detector module configuration.")]
+	[Description("Aimlock wall-tracking detector configuration.")]
 	public AimlockConfig Aimlock { get; set; } = new();
+
+	[Description("Anti-Aim, Spinbot, Sub-Tick Integrity, and Movement Automation detector configuration.")]
+	public AntiAimConfig AntiAim { get; set; } = new();
+
+	[Description("Client Event Subscription (DLL Injection) detector configuration.")]
+	public DllInjectionConfig DllInjection { get; set; } = new();
 
 	[Description("Discord webhook notifications configuration.")]
 	public DiscordConfig Discord { get; set; } = new();

@@ -1,4 +1,8 @@
+bin/
 obj/
+**/bin/
+**/obj/
+TestResults/
 build/
 PENDING.md
 PENDENCIAS.md
