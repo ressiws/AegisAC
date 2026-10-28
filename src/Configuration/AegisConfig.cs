@@ -155,7 +155,7 @@ public sealed class AntiAimConfig
 	[JsonConverter(typeof(JsonStringEnumConverter))]
 	public PunishmentType Punishment { get; set; } = PunishmentType.None;
 
-	[Description("Enable deterministic ANTI_UNTRUSTED viewangle bounds checking (Pitch in [-89, +89], Roll ~ 0, finite NaN/Inf).")]
+	[Description("Enable deterministic ANTI_UNTRUSTED viewangle bounds checking (Pitch in [-89.5, +89.5], Roll in [-50, +50], finite NaN/Inf).")]
 	public bool EnableUntrustedCheck { get; set; } = true;
 
 	[Description("Enable multi-tier continuous Spinbot (720/1440/2880 deg/s) and alternating Yaw Jitter detection.")]

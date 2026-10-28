@@ -45,6 +45,7 @@ internal sealed class AntiAimDetector
         public float SpinScore;
         public float SustainedSpinSeconds;
         public float SubtickTamperScore;
+        public DateTime LastSubtickIncidentTime = DateTime.MinValue;
         public int UntrustedDetections;
         public int SpinDetections;
         public int SubtickDetections;
@@ -85,6 +86,7 @@ internal sealed class AntiAimDetector
             SpinScore = 0f;
             SustainedSpinSeconds = 0f;
             SubtickTamperScore = 0f;
+            LastSubtickIncidentTime = DateTime.MinValue;
             UntrustedDetections = 0;
             SpinDetections = 0;
             SubtickDetections = 0;
@@ -595,13 +597,15 @@ internal sealed class AntiAimDetector
                 return false;
             }
 
-            // 1. Subtick fraction must always lie within [0.0, 1.0].
-            // IMPORTANT: CS2 does NOT sort subtick_moves chronologically across different buttons (e.g. pressing W at 0.70
-            // and pressing A or Mouse1 at 0.25 in the same tick is completely normal in vanilla CS2).
-            // Non-monotonic When is ONLY invalid when the EXACT SAME button goes backward in time while repeating the same state!
-            if (step.When < -0.001f || step.When > 1.001f)
+            // CS2 subtick timing:
+            // Source 2 client calculates `when = (input_time - tick_start_time) / tick_interval`.
+            // Because of Windows high-precision QPC timers, NVIDIA Reflex, and frame pacing,
+            // legitimate clients frequently produce values slightly outside [0, 1] (e.g. -0.060 to 1.060).
+            // CS2AC Legacy does NOT check when < 0.0. Only extreme impossible exploit values (e.g. teleports or server crashes)
+            // outside [-5.0, 5.0] are considered malicious tampering.
+            if (MathF.Abs(step.When) > 5.0f)
             {
-                FlagSubtickTamper(slot, player, playerName, $"Out-of-bounds subtick fraction (when={step.When:F3} outside [0, 1])", 2.5f);
+                FlagSubtickTamper(slot, player, playerName, $"Extreme exploit subtick fraction (when={step.When:F2})", 5.0f);
                 return false;
             }
 
@@ -764,7 +768,18 @@ internal sealed class AntiAimDetector
             return false;
         }
 
-        if (angles.X < -89.05f || angles.X > 89.05f || MathF.Abs(angles.Z) > 1.0f || MathF.Abs(angles.Y) > 360.5f)
+        // Pitch limits:
+        // base viewangles are capped at +/- 89.5 deg.
+        // input_history viewangles include weapon punch and damage flinch, which can legitimately push pitch to +/- 95 deg.
+        bool isInputHistory = context.Contains("input_history", StringComparison.OrdinalIgnoreCase);
+        float maxPitch = isInputHistory ? 95.0f : 89.5f;
+
+        // Roll limits:
+        // In Source 2 CS2, taking damage, aim punch, and grenade shake legitimately apply camera roll up to 10-25 degrees (e.g. roll=-5.91).
+        // Roll is only untrusted if it exceeds physical engine limits (MathF.Abs(roll) > 50.0 deg), matching CS2AC Legacy.
+        const float MaxRoll = 50.0f;
+
+        if (angles.X < -maxPitch || angles.X > maxPitch || MathF.Abs(angles.Z) > MaxRoll || MathF.Abs(angles.Y) > 360.5f)
         {
             FlagUntrusted(slot, player, playerName, $"Out-of-bounds {context} (pitch={angles.X:F2}, yaw={angles.Y:F2}, roll={angles.Z:F2})");
             return false;
@@ -796,9 +811,23 @@ internal sealed class AntiAimDetector
     private void FlagSubtickTamper(int slot, IPlayer? player, string playerName, string reason, float points)
     {
         var state = _players[slot];
+        DateTime now = DateTime.UtcNow;
+
+        // Temporal score decay: if more than 5.0 seconds passed since last incident, decay the score
+        // to ensure isolated or harmless timing variances over a 45-minute match never accumulate to detection.
+        if (state.LastSubtickIncidentTime != DateTime.MinValue)
+        {
+            double elapsed = (now - state.LastSubtickIncidentTime).TotalSeconds;
+            if (elapsed > 5.0)
+            {
+                float decay = (float)(elapsed * 0.5); // decay 1.0 point every 2 seconds
+                state.SubtickTamperScore = MathF.Max(0f, state.SubtickTamperScore - decay);
+            }
+        }
+        state.LastSubtickIncidentTime = now;
+
         state.SubtickTamperScore = MathF.Min(20f, state.SubtickTamperScore + points);
 
-        DateTime now = DateTime.UtcNow;
         if (state.SubtickTamperScore >= 6.0f && (now - state.LastSubtickAlertTime).TotalSeconds >= 15.0)
         {
             state.LastSubtickAlertTime = now;
