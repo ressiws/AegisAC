@@ -117,10 +117,8 @@ internal sealed class AimbotDetector
 	private const float TeleportDistance = 128.0f; // Position delta between consecutive ticks considered a teleport
 	private static readonly TimeSpan EvidenceWindow = TimeSpan.FromMinutes(5);
 
-	private const float SmoothMinimumMovement = 13.0f;
 	private const float SmoothMinimumImprovement = 0.94f;
 	private const float SmoothMaximumFinalError = 1.0f;
-	private const float SmoothMinimumPathEfficiency = 0.94f;
 	private const float SmoothMinimumStep = 0.15f;
 	private const float SmoothRelativeStep = 0.10f;
 	private const int SmoothMinimumSteps = 3;
@@ -132,13 +130,15 @@ internal sealed class AimbotDetector
 		"p90","revolver","sawedoff","scar20","sg556","ssg08","taser","tec9","ump45","usp_silencer","xm1014",
 	};
 
-	private readonly AimbotConfig _settings;
+	private AimbotConfig _settings;
 	private readonly Action<IPlayer, string, string> _announce;
 	private readonly Action<string> _debug;
 	private readonly Func<int, IPlayer?> _getPlayer;
 
 	private readonly PlayerState[] _players = new PlayerState[MaxPlayers + 1];
 	private readonly List<PositionFrame> _frames = new();
+
+	public void UpdateConfig(AimbotConfig settings) => _settings = settings;
 
 	public AimbotDetector(AimbotConfig settings, Func<int, IPlayer?> getPlayer, Action<IPlayer, string, string> announce, Action<string> debug)
 	{
@@ -320,14 +320,15 @@ internal sealed class AimbotDetector
 		{
 			var p = _getPlayer(id);
 			var pawn = p?.PlayerPawn;
-			var node = pawn?.CBodyComponent?.SceneNode;
 
-			if (p == null || !p.IsValid || pawn == null || !pawn.IsValid || node == null)
+			if (p == null || !p.IsValid || pawn == null || !pawn.IsValid)
 				continue;
 
-			Vector origin = node.AbsOrigin;
-			if (!AimMath.IsFinite(origin))
+			Vector? maybeOrigin = pawn.AbsOrigin;
+			if (!maybeOrigin.HasValue || !AimMath.IsFinite(maybeOrigin.Value))
 				continue;
+
+			Vector origin = maybeOrigin.Value;
 
 			var eye = pawn.EyePosition ?? new Vector(origin.X, origin.Y, origin.Z + 64.0f);
 
@@ -521,9 +522,9 @@ internal sealed class AimbotDetector
 	private static AimCommand? FindCommand(PlayerState st, int number) =>
 		st.Commands.FindLast(c => c.CommandNumber == number && c.Simulated);
 
-	private static bool MeetsSmoothThresholds(float movement, float improvement, float finalError, float efficiency, int steps, bool shrinking) =>
-		movement >= SmoothMinimumMovement && improvement >= SmoothMinimumImprovement && finalError <= SmoothMaximumFinalError
-		&& efficiency >= SmoothMinimumPathEfficiency && steps >= SmoothMinimumSteps && shrinking;
+	private bool MeetsSmoothThresholds(float movement, float improvement, float finalError, float efficiency, int steps, bool shrinking) =>
+		movement >= _settings.SmoothMinimumMovement && improvement >= SmoothMinimumImprovement && finalError <= SmoothMaximumFinalError
+		&& efficiency >= _settings.SmoothMinimumPathEfficiency && steps >= SmoothMinimumSteps && shrinking;
 
 	private static string Name(IPlayer p) => p.Controller?.PlayerName ?? $"#{p.PlayerID}";
 
@@ -671,7 +672,7 @@ internal sealed class AimbotDetector
 				measuredBefore = before; measuredAfter = after;
 			}
 
-			bool converged = (snap > 10.0f && after < before * 0.2f) || (snap > 5.0f && after < before * 0.1f);
+			bool converged = (snap >= _settings.SnapAngleThreshold && after < before * 0.2f) || (snap >= (_settings.SnapAngleThreshold * 0.6f) && after < before * 0.1f);
 			bool fresh = !st.HasCountedIncident || newer.CommandNumber > st.LastCountedIncidentCommand;
 			if (converged && fresh)
 			{
@@ -707,7 +708,9 @@ internal sealed class AimbotDetector
 			float snap = AimMath.AngularDistance(previous.Angles, shot.Angles);
 			bool fresh = !st.HasCountedIncident || shot.CommandNumber > st.LastCountedIncidentCommand;
 
-			if (fresh && float.IsFinite(surrounding) && float.IsFinite(snap) && surrounding < 10.0f && snap > 0.5f && snap > surrounding * 5.0f)
+			// SnapReturn detection (silent aim flicking away on shot tick and instantly returning).
+			// Threshold is set to >= 10.0° to eliminate physical mechanical mouse-click sensor noise (0.2° to 1.0°).
+			if (fresh && float.IsFinite(surrounding) && float.IsFinite(snap) && surrounding < 5.0f && snap >= 10.0f && snap > surrounding * 4.0f)
 			{
 				if (!suspicious)
 				{
@@ -775,7 +778,7 @@ internal sealed class AimbotDetector
 			}
 			else
 			{
-				_debug($"{Name(attacker)} smooth curve rejected: movement {smoothMovement:F2}/{SmoothMinimumMovement:F2}, " +
+				_debug($"{Name(attacker)} smooth curve rejected: movement {smoothMovement:F2}/{_settings.SmoothMinimumMovement:F2}, " +
 					   $"error {smoothBefore:F2}->{smoothAfter:F2}/{SmoothMaximumFinalError:F2}, path {efficiency * 100:F1}%, steps {steps}/{SmoothMinimumSteps}, shrinking {shrinking}.");
 			}
 		}

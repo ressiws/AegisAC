@@ -22,6 +22,9 @@ public static class DiscordWebhookNotifier
 	/// </summary>
 	public static void SendAlert(
 		string webhookUrl,
+		string serverId,
+		string mapName,
+		int serverTick,
 		string playerName,
 		ulong steamId,
 		string moduleName,
@@ -73,6 +76,15 @@ public static class DiscordWebhookNotifier
 						"## 🚨 CHEATER DETECTED\n" +
 						$"Player **{EscapeMarkdown(playerName)}** " +
 						"has been flagged by Aegis Anti-Cheat."
+					),
+
+					Separator(),
+
+					Text(
+						"### Server & Match Context\n" +
+						$"**SERVER:** `{EscapeInline(serverId)}`\n" +
+						$"**MAP:** `{EscapeInline(mapName)}`\n" +
+						$"**TICK:** `{serverTick}`"
 					),
 
 					Separator(),

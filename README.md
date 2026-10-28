@@ -24,6 +24,7 @@
 ## 📌 Table of Contents
 
 - [Overview](#-overview)
+- [Showcase](#-showcase)
 - [Key Features](#-key-features)
 - [Detection Modules & Strictness](#-detection-modules--strictness)
 - [Quick Start](#-quick-start)
@@ -41,12 +42,36 @@
 
 ## 📖 Overview
 
-**AegisAC** provides servers with robust, automated detection against aimbots and unnatural aiming mechanics in Counter-Strike 2. Unlike invasive kernel-level drivers or third-party client anti-cheats, AegisAC runs **strictly on the server**:
+**AegisAC** provides servers with robust, automated detection against aimbots, triggerbots, and unnatural aim-locking mechanics in Counter-Strike 2. Unlike invasive kernel-level drivers or third-party client anti-cheats, AegisAC runs **strictly on the server**:
 
 - **Zero Client Overhead:** Players do not need to download or install background software.
 - **Sub-Tick Phase Aware:** Designed from the ground up to operate seamlessly with CS2's usercmd and sub-tick architecture.
 - **Evidence-Based Sanctions:** Punishments are only executed when multiple, high-confidence evidence points are collected across a sliding time window, mitigating false positives.
 - **Extensible Architecture:** Modular design allowing server owners to select independent punishment types (`ban`, `kick`, or `none`) for each detection module.
+
+---
+
+## 🎥 Showcase
+
+<table>
+<tr>
+<td width="33.3%" align="center">
+<img src="docs/showcase/aimbot.gif" width="100%" alt="AegisAC detecting an aimbot snap">
+<br><strong>AIMBOT</strong><br>
+<sub>Damaging shots following blatant angular snaps and unnatural curve smoothing onto target hitboxes.</sub>
+</td>
+<td width="33.3%" align="center">
+<img src="docs/showcase/aimlock.gif" width="100%" alt="AegisAC detecting aimlock target tracking">
+<br><strong>AIMLOCK</strong><br>
+<sub>Crosshair adhering mechanically to a moving enemy with sustained ≥95% hull coverage.</sub>
+</td>
+<td width="33.3%" align="center">
+<img src="docs/showcase/triggerbot.gif" width="100%" alt="AegisAC detecting an inhuman triggerbot reaction">
+<br><strong>TRIGGERBOT</strong><br>
+<sub>Instantaneous weapon discharges (≤120ms) upon crosshair intersection with enemy targets.</sub>
+</td>
+</tr>
+</table>
 
 ---
 
@@ -239,7 +264,7 @@ AegisAC configurations are stored in `addons/swiftlys2/configs/plugins/AegisAC/c
       "Enabled": true,
 
       // Punishment applied upon detection: "none", "kick", or "ban"
-      "Punishment": "none",
+      "Punishment": "ban",
 
       // Treat teammates as enemies (useful for FFA / Deathmatch servers)
       "TeammatesAreEnemies": false

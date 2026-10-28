@@ -76,10 +76,17 @@ internal sealed class AimlockIncident
 	public required int TargetId { get; init; }
 }
 
+internal sealed class AimlockCommand
+{
+	public int CommandNumber;
+	public QAngle Angles;
+}
+
 internal sealed class AimlockPlayerData
 {
 	public AimlockSample Pending;
 	public readonly AimlockTrack Track = new();
+	public readonly List<AimlockCommand> Commands = new();
 	public int LatchedTarget = -1;
 	public int LatchedBodyPoint = -1;
 	public int BreakStartTick = -1;
@@ -91,6 +98,7 @@ internal sealed class AimlockPlayerData
 	{
 		Pending = default;
 		Track.Clear();
+		Commands.Clear();
 		LatchedTarget = -1;
 		LatchedBodyPoint = -1;
 		BreakStartTick = -1;
@@ -111,7 +119,7 @@ internal sealed class AimlockDetector
 	private static readonly TimeSpan EvidenceWindow = TimeSpan.FromMinutes(5);
 	private static readonly float[] BodyHeights = [8.0f, 46.0f, 64.0f]; // Feet, Chest, Head
 
-	private readonly AimlockConfig _config;
+	private AimlockConfig _config;
 	private readonly Func<int, PositionFrame?> _findFrame;
 	private readonly Func<int, IPlayer?> _getPlayer;
 	private readonly Func<int, int, bool> _areEnemies;
@@ -119,6 +127,8 @@ internal sealed class AimlockDetector
 	private readonly Action<string> _debug;
 
 	private readonly AimlockPlayerData[] _players = new AimlockPlayerData[AimbotDetector.MaxPlayers + 1];
+
+	public void UpdateConfig(AimlockConfig config) => _config = config;
 
 	public long StatEvaluations, StatTracksStarted, StatIncidents, StatDetections;
 
@@ -152,8 +162,63 @@ internal sealed class AimlockDetector
 
 	public void OnClientDisconnect(int playerId)
 	{
-		if (playerId >= 1 && playerId < _players.Length)
+		if (playerId >= 0 && playerId < _players.Length)
 			_players[playerId].Reset();
+	}
+
+	public void OnProcessUsercmds(IPlayer player, List<SwiftlyS2.Shared.GameHooks.IUserCmd> cmds)
+	{
+		if (!_config.Enabled || !AimbotDetector.IsEligibleHuman(player) || cmds.Count == 0)
+			return;
+
+		int id = player.PlayerID;
+		if (id < 0 || id >= _players.Length)
+			return;
+
+		var st = _players[id];
+
+		foreach (var cmd in cmds)
+		{
+			var pb = cmd.CSGOUserCmd;
+			int number = (int)cmd.CommandNumber;
+
+			if (st.Commands.Exists(c => c.CommandNumber == number))
+				continue;
+
+			if (!pb.Accessor.HasField("base"))
+				continue;
+
+			var b = pb.Base;
+			if (!b.Accessor.HasField("viewangles"))
+				continue;
+
+			QAngle angles = b.Viewangles;
+			int idx = pb.Attack1StartHistoryIndex;
+			int histCount = pb.InputHistory.Count;
+
+			if (idx >= 0 && idx < histCount)
+			{
+				var entry = pb.InputHistory.Get(idx);
+				if (entry.Accessor.HasField("view_angles"))
+				{
+					QAngle shotAngles = entry.ViewAngles;
+					if (AimMath.IsFinite(shotAngles))
+						angles = shotAngles;
+				}
+			}
+
+			if (!AimMath.IsFinite(angles))
+				continue;
+
+			st.Commands.Add(new AimlockCommand
+			{
+				CommandNumber = number,
+				Angles = angles
+			});
+
+			if (st.Commands.Count > 128)
+				st.Commands.RemoveAt(0);
+		}
 	}
 
 	private static bool MeetsCoverage(int onTarget, int samples) =>
@@ -233,7 +298,7 @@ internal sealed class AimlockDetector
 		maximumError = 0.0f;
 		requiredTargetDisplacement = 0.0f;
 
-		if (observerIndex < 1 || observerIndex > AimbotDetector.MaxPlayers || targetIndex < 1 || targetIndex > AimbotDetector.MaxPlayers)
+		if (observerIndex < 0 || observerIndex >= AimbotDetector.MaxPlayers || targetIndex < 0 || targetIndex >= AimbotDetector.MaxPlayers)
 			return false;
 
 		var observer = currentFrame.Players[observerIndex];
@@ -261,7 +326,7 @@ internal sealed class AimlockDetector
 	private Candidate FindCandidate(AimlockSample sample, PositionFrame currentFrame, int observerIndex, int estimateTicks)
 	{
 		Candidate best = default;
-		if (observerIndex < 1 || observerIndex > AimbotDetector.MaxPlayers || !AimMath.IsFinite(sample.EyePosition) || !AimMath.IsFinite(sample.Angles))
+		if (observerIndex < 0 || observerIndex >= AimbotDetector.MaxPlayers || !AimMath.IsFinite(sample.EyePosition) || !AimMath.IsFinite(sample.Angles))
 			return best;
 
 		var observer = currentFrame.Players[observerIndex];
@@ -281,7 +346,7 @@ internal sealed class AimlockDetector
 			if (historicalFrame == null)
 				continue;
 
-			for (int targetIndex = 1; targetIndex <= AimbotDetector.MaxPlayers; targetIndex++)
+			for (int targetIndex = 0; targetIndex < AimbotDetector.MaxPlayers; targetIndex++)
 			{
 				if (targetIndex == observerIndex)
 					continue;
@@ -326,7 +391,7 @@ internal sealed class AimlockDetector
 			return;
 
 		int id = player.PlayerID;
-		if (id < 1 || id >= _players.Length)
+		if (id < 0 || id >= _players.Length)
 			return;
 
 		var st = _players[id];
@@ -341,9 +406,18 @@ internal sealed class AimlockDetector
 			return;
 		}
 
-		Vector origin = pawn.AbsOrigin ?? default;
+		Vector? maybeOrigin = pawn.AbsOrigin;
+		if (!maybeOrigin.HasValue || !AimMath.IsFinite(maybeOrigin.Value))
+		{
+			st.Track.Clear();
+			st.Pending = default;
+			return;
+		}
+
+		Vector origin = maybeOrigin.Value;
 		Vector eye = pawn.EyePosition ?? new Vector(origin.X, origin.Y, origin.Z + 64.0f);
-		QAngle angles = pawn.EyeAngles;
+		var cmd = st.Commands.FindLast(c => c.CommandNumber == commandNumber);
+		QAngle angles = cmd != null ? cmd.Angles : pawn.EyeAngles;
 
 		if (!AimMath.IsFinite(angles) || !AimMath.IsFinite(eye))
 		{
@@ -366,7 +440,7 @@ internal sealed class AimlockDetector
 		if (!_config.Enabled)
 			return;
 
-		for (int index = 1; index <= AimbotDetector.MaxPlayers; index++)
+		for (int index = 0; index < AimbotDetector.MaxPlayers; index++)
 		{
 			var player = _getPlayer(index);
 			if (player == null || !AimbotDetector.IsEligibleHuman(player) || !player.IsAlive)
@@ -382,9 +456,9 @@ internal sealed class AimlockDetector
 			var sample = st.Pending;
 			st.Pending = default;
 
-			if (sample.ServerTick > currentTick || currentTick - sample.ServerTick > 1 || sample.ServerTick <= st.LastProcessedTick || _findFrame(sample.ServerTick) == null)
+			if (sample.ServerTick > currentTick || currentTick - sample.ServerTick > 2 || sample.ServerTick <= st.LastProcessedTick || _findFrame(sample.ServerTick) == null)
 			{
-				if (st.Track.TargetIndex >= 0)
+				if (st.Track.TargetIndex >= 0 && st.Track.Samples > 16)
 					_debug($"[Aimlock] {Name(player)} tracking reset: snapshot mismatch (sampleTick={sample.ServerTick}, currentTick={currentTick}, lastProcessed={st.LastProcessedTick}).");
 				st.Track.Clear();
 				continue;
@@ -517,15 +591,16 @@ internal sealed class AimlockDetector
 		}
 
 		int serverTickDelta = sample.ServerTick - data.Track.LastServerTick;
-		if (serverTickDelta != 1)
+		if (serverTickDelta < 1 || serverTickDelta > 3)
 		{
-			_debug($"[Aimlock] {Name(player)} tracking reset: simulated ticks not consecutive (delta={serverTickDelta}).");
+			if (data.Track.Samples > 16)
+				_debug($"[Aimlock] {Name(player)} tracking reset: simulated ticks not consecutive (delta={serverTickDelta}).");
 			data.Track.Clear();
 			StartTrack();
 			return;
 		}
 
-		data.Track.Samples++;
+		data.Track.Samples += serverTickDelta;
 		int validHypotheses = 0;
 
 		for (int index = 0; index < data.Track.HypothesisCount; index++)
@@ -551,7 +626,7 @@ internal sealed class AimlockDetector
 
 			validHypotheses++;
 			if (error <= maximumError)
-				hypothesis.OnTargetSamples++;
+				hypothesis.OnTargetSamples += serverTickDelta;
 
 			hypothesis.MaximumTargetDisplacement = MathF.Max(hypothesis.MaximumTargetDisplacement, displacement);
 		}

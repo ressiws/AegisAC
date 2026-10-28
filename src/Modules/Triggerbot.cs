@@ -42,6 +42,7 @@ internal sealed class TriggerPendingAttack
 	public required int TargetIndex { get; init; }
 	public required int ReactionTicks { get; init; }
 	public required TriggerContactMode Mode { get; init; }
+	public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
 }
 
 internal sealed class TriggerIncident
@@ -76,6 +77,7 @@ internal sealed class TriggerPlayerState
 	public TriggerContactMode ActiveMode = TriggerContactMode.TargetDriven;
 	public QAngle LastAngles;
 	public bool LastAnglesValid;
+	public bool WasAttacking;
 	public readonly int[] LastContactTick = new int[AimbotDetector.MaxPlayers + 1];
 	public readonly List<TriggerCommand> Commands = new();
 	public readonly List<TriggerPendingAttack> Pending = new();
@@ -93,6 +95,7 @@ internal sealed class TriggerPlayerState
 		ContactStartCommand = -1;
 		ActiveMode = TriggerContactMode.TargetDriven;
 		LastAnglesValid = false;
+		WasAttacking = false;
 		Array.Fill(LastContactTick, -1);
 		Commands.Clear();
 		Pending.Clear();
@@ -110,12 +113,14 @@ internal sealed class TriggerbotDetector
 	private static readonly TimeSpan EvidenceWindow = TimeSpan.FromMinutes(5);
 	private static readonly TimeSpan SmokeLifetime = TimeSpan.FromMilliseconds(22500);
 
-	private static readonly HashSet<string> ExcludedWeapons = new(StringComparer.OrdinalIgnoreCase)
+	private static readonly HashSet<string> BallisticWeapons = new(StringComparer.OrdinalIgnoreCase)
 	{
-		"revolver", "taser", "knife", "bayonet"
+		"ak47","aug","awp","bizon","cz75a","deagle","elite","famas","fiveseven","g3sg1","galilar","glock",
+		"hkp2000","m249","m4a1","m4a1_silencer","mac10","mag7","mp5sd","mp7","mp9","negev","nova","p250",
+		"p90","sawedoff","scar20","sg556","ssg08","tec9","ump45","usp_silencer","xm1014"
 	};
 
-	private readonly TriggerbotConfig _config;
+	private TriggerbotConfig _config;
 	private readonly ITraceManager _traceManager;
 	private readonly Func<int, IPlayer?> _getPlayer;
 	private readonly Func<int, int, bool> _areEnemies;
@@ -125,6 +130,8 @@ internal sealed class TriggerbotDetector
 	private readonly TriggerPlayerState[] _players = new TriggerPlayerState[AimbotDetector.MaxPlayers + 1];
 	private readonly List<TriggerSmoke> _smokes = new();
 	private DateTime _smokeStateUnknownUntil = DateTime.MinValue;
+
+	public void UpdateConfig(TriggerbotConfig config) => _config = config;
 
 	public long StatContactChecks, StatAcquisitions, StatPendingAttacks, StatHurtsEvaluated, StatDetections;
 
@@ -161,7 +168,7 @@ internal sealed class TriggerbotDetector
 
 	public void OnClientDisconnect(int playerId)
 	{
-		if (playerId >= 1 && playerId < _players.Length)
+		if (playerId >= 0 && playerId < _players.Length)
 			_players[playerId].Reset();
 	}
 
@@ -183,7 +190,7 @@ internal sealed class TriggerbotDetector
 			return;
 
 		int id = player.PlayerID;
-		if (id < 1 || id >= _players.Length)
+		if (id < 0 || id >= _players.Length)
 			return;
 
 		var st = _players[id];
@@ -243,7 +250,7 @@ internal sealed class TriggerbotDetector
 			return;
 
 		int id = player.PlayerID;
-		if (id < 1 || id >= _players.Length)
+		if (id < 0 || id >= _players.Length)
 			return;
 
 		var pawn = player.PlayerPawn;
@@ -257,11 +264,12 @@ internal sealed class TriggerbotDetector
 
 		QAngle viewAngles = cmd != null ? cmd.Angles : pawn.EyeAngles;
 		bool isFreshAttack = cmd != null && cmd.IsFreshAttack;
+		st.WasAttacking = isFreshAttack;
 
 		if (commandNumber <= st.LastCommandNumber)
 			return;
 
-		if (st.LastCommandNumber >= 0 && commandNumber != st.LastCommandNumber + 1)
+		if (st.LastCommandNumber >= 0 && commandNumber - st.LastCommandNumber > 16)
 		{
 			st.ActiveTarget = -1;
 			st.ContactStartCommand = -1;
@@ -289,24 +297,20 @@ internal sealed class TriggerbotDetector
 			st.ActiveTarget = targetIndex;
 			st.ContactStartCommand = -1;
 
-			if (targetIndex >= 1)
+			if (targetIndex >= 0)
 			{
-				int previousContact = st.LastContactTick[targetIndex];
-				if (previousContact < 0 || currentTick - previousContact >= FreshContactTicks)
-				{
-					st.ContactStartCommand = commandNumber;
-					float aimMovement = st.LastAnglesValid ? AimMath.AngularDistance(st.LastAngles, viewAngles) : 0.0f;
-					st.ActiveMode = float.IsFinite(aimMovement) && aimMovement > HeldAngleMaximumDegrees
-						? TriggerContactMode.AimDriven
-						: TriggerContactMode.TargetDriven;
+				st.ContactStartCommand = commandNumber;
+				float aimMovement = st.LastAnglesValid ? AimMath.AngularDistance(st.LastAngles, viewAngles) : 0.0f;
+				st.ActiveMode = float.IsFinite(aimMovement) && aimMovement > HeldAngleMaximumDegrees
+					? TriggerContactMode.AimDriven
+					: TriggerContactMode.TargetDriven;
 
-					StatAcquisitions++;
-					_debug($"[Triggerbot] {Name(player)} acquired target #{targetIndex} (mode: {st.ActiveMode}, cmd: {commandNumber}).");
-				}
+				StatAcquisitions++;
+				_debug($"[Triggerbot] {Name(player)} acquired target #{targetIndex} (mode: {st.ActiveMode}, cmd: {commandNumber}).");
 			}
 		}
 
-		if (targetIndex >= 1)
+		if (targetIndex >= 0)
 		{
 			st.LastContactTick[targetIndex] = currentTick;
 		}
@@ -316,12 +320,12 @@ internal sealed class TriggerbotDetector
 		_smokes.RemoveAll(s => s.Expires <= now);
 
 		bool smokeOccluded = now < _smokeStateUnknownUntil;
-		if (!smokeOccluded && targetIndex >= 1)
+		if (!smokeOccluded && targetIndex >= 0)
 		{
 			smokeOccluded = _smokes.Any(s => SegmentTouchesSmokeBounds(eye, hitPoint, s.Center));
 		}
 
-		if (isFreshAttack && targetIndex >= 1 && st.ContactStartCommand >= 0)
+		if (isFreshAttack && targetIndex >= 0 && st.ContactStartCommand >= 0)
 		{
 			int reactionTicks = commandNumber - st.ContactStartCommand;
 			if (!smokeOccluded)
@@ -355,23 +359,48 @@ internal sealed class TriggerbotDetector
 		if (!_config.Enabled || !AimbotDetector.IsEligibleHuman(player))
 			return;
 
+		string normWeapon = weapon.StartsWith("weapon_", StringComparison.OrdinalIgnoreCase) ? weapon[7..] : weapon;
+		if (!BallisticWeapons.Contains(normWeapon))
+			return;
+
 		int id = player.PlayerID;
-		if (id < 1 || id >= _players.Length)
+		if (id < 0 || id >= _players.Length)
 			return;
 
 		var st = _players[id];
-		if (st.ActiveTarget < 1 || st.ContactStartCommand < 0)
+		// Discard continuous spray bullets: a triggerbot initiates combat on fresh click, not on bullet #12 of an ongoing spray.
+		if (st.WasAttacking && st.Pending.Count > 0)
+			return;
+
+		int targetIndex = st.ActiveTarget;
+		int contactStart = st.ContactStartCommand;
+
+		if (targetIndex < 0)
+		{
+			// Check if contact was lost within the last 2 ticks due to weapon recoil punch
+			for (int t = 0; t < AimbotDetector.MaxPlayers; t++)
+			{
+				if (st.LastContactTick[t] >= 0 && currentTick - st.LastContactTick[t] <= 2)
+				{
+					targetIndex = t;
+					contactStart = st.ContactStartCommand >= 0 ? st.ContactStartCommand : st.LastCommandNumber - (currentTick - st.LastContactTick[t]);
+					break;
+				}
+			}
+		}
+
+		if (targetIndex < 0 || contactStart < 0)
 			return;
 
 		int cmdNum = st.LastCommandNumber >= 0 ? st.LastCommandNumber : currentTick;
-		int reactionTicks = Math.Max(0, cmdNum - st.ContactStartCommand);
+		int reactionTicks = Math.Max(0, cmdNum - contactStart);
 
 		if (!st.Pending.Any(p => p.CommandNumber == cmdNum))
 		{
 			st.Pending.Add(new TriggerPendingAttack
 			{
 				CommandNumber = cmdNum,
-				TargetIndex = st.ActiveTarget,
+				TargetIndex = targetIndex,
 				ReactionTicks = reactionTicks,
 				Mode = st.ActiveMode
 			});
@@ -380,7 +409,7 @@ internal sealed class TriggerbotDetector
 				st.Pending.RemoveAt(0);
 
 			StatPendingAttacks++;
-			_debug($"[Triggerbot] {Name(player)} weapon_fire registered reaction: {reactionTicks} ticks on target #{st.ActiveTarget}.");
+			_debug($"[Triggerbot] {Name(player)} weapon_fire registered reaction: {reactionTicks} ticks on target #{targetIndex}.");
 		}
 	}
 
@@ -390,7 +419,7 @@ internal sealed class TriggerbotDetector
 			return;
 
 		int attackerId = attacker.PlayerID;
-		if (attackerId < 1 || attackerId >= _players.Length)
+		if (attackerId < 0 || attackerId >= _players.Length)
 			return;
 
 		var st = _players[attackerId];
@@ -415,7 +444,16 @@ internal sealed class TriggerbotDetector
 			return;
 
 		string normWeapon = weapon.StartsWith("weapon_", StringComparison.OrdinalIgnoreCase) ? weapon[7..] : weapon;
-		if (ExcludedWeapons.Contains(normWeapon) || pendingMatch.ReactionTicks < 0)
+		if (!BallisticWeapons.Contains(normWeapon) || pendingMatch.ReactionTicks < 0)
+			return;
+
+		// Discard pending reactions older than 0.75 seconds to avoid matching delayed hits with obsolete clicks
+		if ((DateTime.UtcNow - pendingMatch.CreatedAt).TotalSeconds > 0.75)
+			return;
+
+		// Pure Triggerbot operates on TargetDriven mode (holding an angle and reacting to an enemy crossing crosshair).
+		// AimDriven reactions are flicks/swipes where the click is intentionally coordinated with arm movement.
+		if (pendingMatch.Mode != TriggerContactMode.TargetDriven)
 			return;
 
 		float reactionMs = pendingMatch.ReactionTicks * (1000.0f / 64.0f);
@@ -473,40 +511,104 @@ internal sealed class TriggerbotDetector
 			eye.Y + forward.Y * TraceLength,
 			eye.Z + forward.Z * TraceLength);
 
-		var traceParams = new TraceParams
+		float maxDistance = TraceLength;
+		Vector hitEnd = end;
+		try
 		{
-			InteractWith = MaskTrace.Solid | MaskTrace.Hitbox | MaskTrace.Player,
-			EntitiesToIgnore = [pawn],
-			ShouldHitEntity = ent => ent != null && ent.Index != pawn.Index && ent.Address != pawn.Address
-		};
+			var traceParams = new TraceParams
+			{
+				InteractWith = MaskTrace.Solid | MaskTrace.Hitbox | MaskTrace.Player |
+				               MaskTrace.CsgoTeam1 | MaskTrace.CsgoTeam2
+			};
 
-		var trace = _traceManager.TraceShapeLine(eye, end, traceParams);
-		if (!trace.DidHit || trace.Entity == null)
-			return (-1, Vector.Zero);
+			var trace = _traceManager.TraceShapeLine(eye, end, traceParams);
+			if (trace.DidHit && trace.Distance > 0.0f)
+			{
+				maxDistance = trace.Distance;
+				hitEnd = trace.EndPos;
+			}
 
-		uint hitIndex = trace.Entity.Index;
-		nint hitAddress = trace.Entity.Address;
+			// 1. Direct native trace hit check
+			if (trace.DidHit && trace.Entity != null && trace.Entity.IsValid)
+			{
+				uint hitIndex = trace.Entity.Index;
 
-		for (int i = 1; i <= AimbotDetector.MaxPlayers; i++)
+				for (int i = 0; i < AimbotDetector.MaxPlayers; i++)
+				{
+					var target = _getPlayer(i);
+					if (target is not { IsValid: true } || target.PlayerID == player.PlayerID)
+						continue;
+
+					if (!target.IsAlive || !_areEnemies(player.PlayerID, target.PlayerID))
+						continue;
+
+					var targetPawn = target.PlayerPawn;
+					if (targetPawn != null && targetPawn.IsValid && targetPawn.Index == hitIndex)
+						return (target.PlayerID, trace.EndPos);
+				}
+			}
+		}
+		catch { }
+
+		// 2. Geometric hull/cylinder intersection bounded by wall line-of-sight distance
+		int bestTarget = -1;
+		float bestDist = float.MaxValue;
+		Vector bestPoint = hitEnd;
+
+		for (int i = 0; i < AimbotDetector.MaxPlayers; i++)
 		{
 			var target = _getPlayer(i);
 			if (target is not { IsValid: true } || target.PlayerID == player.PlayerID)
+				continue;
+
+			if (!target.IsAlive || !_areEnemies(player.PlayerID, target.PlayerID))
 				continue;
 
 			var targetPawn = target.PlayerPawn;
 			if (targetPawn is null)
 				continue;
 
-			if (targetPawn.Index != hitIndex && targetPawn.Address != hitAddress)
+			Vector? maybeOrigin = targetPawn.AbsOrigin;
+			if (!maybeOrigin.HasValue || !AimMath.IsFinite(maybeOrigin.Value))
 				continue;
 
-			if (!target.IsAlive || !_areEnemies(player.PlayerID, target.PlayerID))
+			Vector origin = maybeOrigin.Value;
+
+			float dx = origin.X - eye.X;
+			float dy = origin.Y - eye.Y;
+			float dz = origin.Z - eye.Z;
+
+			float t = dx * forward.X + dy * forward.Y + dz * forward.Z;
+			if (t < 30.0f || t >= maxDistance)
 				continue;
 
-			return (i, trace.EndPos);
+			float px = eye.X + forward.X * t;
+			float py = eye.Y + forward.Y * t;
+			float pz = eye.Z + forward.Z * t;
+
+			if (pz < origin.Z - 4.0f || pz > origin.Z + 76.0f)
+				continue;
+
+			float latX = px - origin.X;
+			float latY = py - origin.Y;
+			float latDistSq = latX * latX + latY * latY;
+
+			const float playerRadius = 18.0f; // CS2 player hull radius (16 + 2 tolerance)
+			if (latDistSq <= playerRadius * playerRadius)
+			{
+				if (t < bestDist)
+				{
+					bestDist = t;
+					bestTarget = target.PlayerID;
+					bestPoint = new Vector(px, py, pz);
+				}
+			}
 		}
 
-		return (-1, trace.EndPos);
+		if (bestTarget >= 0)
+			return (bestTarget, bestPoint);
+
+		return (-1, hitEnd);
 	}
 
 	private static bool SegmentTouchesSmokeBounds(in Vector start, in Vector end, in Vector center)

@@ -10,13 +10,15 @@ namespace AegisAC.Punishment;
 public sealed class PunishmentManager
 {
 	private readonly ISwiftlyCore _core;
-	private readonly AegisConfig _config;
+	private AegisConfig _config;
 
 	public PunishmentManager(ISwiftlyCore core, AegisConfig config)
 	{
 		_core = core;
 		_config = config;
 	}
+
+	public void UpdateConfig(AegisConfig config) => _config = config;
 
 	/// <summary>
 	/// Applies punishment to a detected player based on the configured punishment type.
@@ -72,20 +74,39 @@ public sealed class PunishmentManager
 		}
 		else
 		{
-			_core.Engine.ExecuteCommand($"banid 0 {player.SteamID}");
-			_core.Engine.ExecuteCommand("writeid");
+			_core.Engine.ExecuteCommand($"sw_ban #{player.UserID} 0 \"[AegisAC] {Sanitize(reason)}\"");
 			player.Kick($"[AegisAC] {reason}", default);
 		}
 
 		Utils.Log($" \x04[AegisAC]\x01 Punished \x07{name}\x01 (Action: \x0FBAN\x01, Reason: {reason})");
 	}
 
+	private static string Sanitize(string input)
+	{
+		if (string.IsNullOrEmpty(input))
+			return "";
+		return input
+			.Replace("\"", "")
+			.Replace(";", "")
+			.Replace("'", "")
+			.Replace("\n", " ")
+			.Replace("\r", " ")
+			.Trim();
+	}
+
 	private static string FormatCommand(string template, IPlayer player, string name, string reason)
 	{
+		string sanitizedName = Sanitize(name);
+		string sanitizedReason = Sanitize(reason);
+		int userId = player.UserID;
+		int slot = player.PlayerID;
+		ulong steamId = player.SteamID;
+
 		return template
-			.Replace("{userid}", player.PlayerID.ToString())
-			.Replace("{steamid}", player.SteamID.ToString())
-			.Replace("{name}", name)
-			.Replace("{reason}", reason);
+			.Replace("{userid}", userId.ToString())
+			.Replace("{slot}", slot.ToString())
+			.Replace("{steamid}", steamId.ToString())
+			.Replace("{name}", sanitizedName)
+			.Replace("{reason}", sanitizedReason);
 	}
 }
