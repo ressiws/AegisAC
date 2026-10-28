@@ -201,6 +201,17 @@ public class AimlockAndAntiAimTests
         // Per-player 60s cooldown latch ensures 50 malformed packets produce exactly 1 alert, preventing log/webhook DoS!
         Assert.Single(alerts);
         Assert.Contains("Untrusted", alerts[0].Mode);
+
+        // 2. Legitimate player with combat aim punch / flinch camera roll (roll = -5.91 deg, 18.5 deg)
+        // must NEVER trigger Anti-Untrusted!
+        alerts.Clear();
+        for (int i = 1; i <= 100; i++)
+        {
+            // The exact angle sample from production server gunfight flinch:
+            QAngle legitCombatAngle = new(-16.08f, 26.90f, -5.91f);
+            antiAim.RecordAngleSample(2, i, i, legitCombatAngle, isShot: i % 10 == 0);
+        }
+        Assert.Empty(alerts);
     }
 
     [Fact]
@@ -232,15 +243,17 @@ public class AimlockAndAntiAimTests
         Assert.Equal("Subtick Tamper", alerts[0].Mode);
 
         // 2. Legitimate mixed button (When=0.75 on W, When=0.25 on A/Mouse1, plus analog Button=0 at When=0.0)
-        // CS2 does NOT sort subtick_moves chronologically across different buttons — must NEVER false-flag!
+        // Includes real-world Windows QPC / NVIDIA Reflex negative timestamps (-0.055, -0.023, -0.016, -0.047)
+        // and frametime jitter slightly above 1.0. Must NEVER false-flag!
         alerts.Clear();
         (ulong Button, bool Pressed, float When, float PitchDelta, float YawDelta)[] legitMixedSteps =
         [
-            (8UL, true, 0.75f, 0f, 0f),
-            (512UL, true, 0.25f, 0f, 0f),
+            (8UL, true, -0.023f, 0f, 0f), // RawInput arriving 0.36ms before tick boundary
+            (512UL, true, -0.055f, 0f, 0f), // RawInput arriving 0.85ms before tick boundary
             (1UL, true, 0.15f, 0f, 0f),
             (2UL, true, 0.50f, 0f, 0f),
             (2UL, true, 0.50f, 0f, 0f), // Dual jump bind (Space + mwheeldown)
+            (8UL, false, 1.045f, 0f, 0f), // Slight frametime overrun
             (0UL, false, 0.00f, 0.15f, -0.35f)
         ];
 
