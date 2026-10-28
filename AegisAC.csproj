@@ -29,6 +29,8 @@
 
   <ItemGroup>
     <Compile Remove="examples\**\*.cs" />
+    <Compile Remove="tests\**\*.cs" />
+    <InternalsVisibleTo Include="AegisAC.Tests" />
   </ItemGroup>
 
   <Target Name="CreateZip" AfterTargets="Publish">
@@ -39,4 +41,4 @@
     <ZipDirectory SourceDirectory="$(PublishDir)../" DestinationFile="$(OutputPath)../$(AssemblyName).zip" Overwrite="true" />
   </Target>
 
-</Project> 
+</Project>

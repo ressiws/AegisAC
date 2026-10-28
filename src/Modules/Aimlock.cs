@@ -9,7 +9,8 @@
  *
  * Description:
  *   Server-side aimlock detection module analyzing sustained unnatural
- *   target tracking, angle locks, and mechanical adherence across player movement.
+ *   target tracking, wall-occlusion adherence, lag-compensated interpolation
+ *   hypotheses, and explicit missing-sample handling.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +21,12 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using AegisAC.Configuration;
 using SwiftlyS2.Shared.Natives;
 using SwiftlyS2.Shared.Players;
+using SwiftlyS2.Shared.Services;
+using SwiftlyS2.Shared.Trace;
 
 namespace AegisAC.Modules;
 
@@ -41,6 +45,7 @@ internal struct AimlockLagHypothesis
 	public float RequiredTargetDisplacement;
 	public int LagTicks;
 	public int OnTargetSamples;
+	public int OccludedOnTargetSamples;
 	public bool Valid;
 }
 
@@ -51,6 +56,8 @@ internal sealed class AimlockTrack
 	public int StartServerTick;
 	public int LastServerTick;
 	public int Samples;
+	public int MissingTicks;
+	public int OffTargetStreak;
 	public int HypothesisCount;
 	public readonly AimlockLagHypothesis[] Hypotheses = new AimlockLagHypothesis[AimlockDetector.LagSearchRadius * 2 + 1];
 
@@ -61,6 +68,8 @@ internal sealed class AimlockTrack
 		StartServerTick = 0;
 		LastServerTick = 0;
 		Samples = 0;
+		MissingTicks = 0;
+		OffTargetStreak = 0;
 		HypothesisCount = 0;
 		Array.Clear(Hypotheses);
 	}
@@ -70,6 +79,7 @@ internal sealed class AimlockIncident
 {
 	public required DateTime Time { get; init; }
 	public required int OnTargetSamples { get; init; }
+	public required int OccludedSamples { get; init; }
 	public required int TotalSamples { get; init; }
 	public required float Displacement { get; init; }
 	public required float RequiredDisplacement { get; init; }
@@ -111,8 +121,10 @@ internal sealed class AimlockPlayerData
 internal sealed class AimlockDetector
 {
 	public const int LagSearchRadius = 2;
+	public const int MaxMissingTicksPerEpisode = 3;
+	private const float MaximumInterpolationTicks = 19.0f;
 	private int TrackingTicks => Math.Max(16, (int)MathF.Round(_config.TrackingDurationSeconds * 64.0f));
-	private const int RearmTicks = 32;     // 0.5 seconds at 64-tick
+	private const int RearmTicks = 32; // 0.5 seconds at 64-tick
 	private const float PlayerHalfWidth = 16.0f;
 	private float MinimumDistance => _config.MinimumDistance;
 	private float MinimumTargetTravel => _config.MinimumTargetTravel;
@@ -125,12 +137,16 @@ internal sealed class AimlockDetector
 	private readonly Func<int, int, bool> _areEnemies;
 	private readonly Action<IPlayer, string, string> _announce;
 	private readonly Action<string> _debug;
+	private readonly ITraceManager? _traceManager;
+	private readonly Func<Vector, Vector, int, int, bool>? _isOccludedOverride;
+	private readonly NetworkSafetyMonitor? _networkSafety;
 
 	private readonly AimlockPlayerData[] _players = new AimlockPlayerData[AimbotDetector.MaxPlayers + 1];
+	private readonly Dictionary<ulong, List<AimlockIncident>> _persistentIncidents = new();
 
 	public void UpdateConfig(AimlockConfig config) => _config = config;
 
-	public long StatEvaluations, StatTracksStarted, StatIncidents, StatDetections;
+	public long StatEvaluations, StatTracksStarted, StatMissingTickResets, StatVisibleRejected, StatIncidents, StatDetections;
 
 	public AimlockDetector(
 		AimlockConfig config,
@@ -138,7 +154,10 @@ internal sealed class AimlockDetector
 		Func<int, IPlayer?> getPlayer,
 		Func<int, int, bool> areEnemies,
 		Action<IPlayer, string, string> announce,
-		Action<string> debug)
+		Action<string> debug,
+		ITraceManager? traceManager = null,
+		Func<Vector, Vector, int, int, bool>? isOccludedOverride = null,
+		NetworkSafetyMonitor? networkSafety = null)
 	{
 		_config = config;
 		_findFrame = findFrame;
@@ -146,16 +165,20 @@ internal sealed class AimlockDetector
 		_areEnemies = areEnemies;
 		_announce = announce;
 		_debug = debug;
+		_traceManager = traceManager;
+		_isOccludedOverride = isOccludedOverride;
+		_networkSafety = networkSafety;
 
 		for (int i = 0; i < _players.Length; i++)
 			_players[i] = new AimlockPlayerData();
 	}
 
 	public string Stats() =>
-		$"evals={StatEvaluations} tracks={StatTracksStarted} incidents={StatIncidents} detections={StatDetections}";
+		$"evals={StatEvaluations} tracks={StatTracksStarted} gapResets={StatMissingTickResets} visRej={StatVisibleRejected} incidents={StatIncidents} detections={StatDetections}";
 
 	public void Reset()
 	{
+		_persistentIncidents.Clear();
 		for (int i = 0; i < _players.Length; i++)
 			_players[i].Reset();
 	}
@@ -175,26 +198,10 @@ internal sealed class AimlockDetector
 		if (id < 0 || id >= _players.Length)
 			return;
 
-		var st = _players[id];
-
 		foreach (var cmd in cmds)
 		{
 			var pb = cmd.CSGOUserCmd;
 			int number = (int)cmd.CommandNumber;
-
-			bool isDup = false;
-			for (int ci = st.Commands.Count - 1; ci >= 0; ci--)
-			{
-				if (st.Commands[ci].CommandNumber == number)
-				{
-					isDup = true;
-					break;
-				}
-				if (st.Commands[ci].CommandNumber < number)
-					break;
-			}
-			if (isDup)
-				continue;
 
 			if (!pb.Accessor.HasField("base"))
 				continue;
@@ -203,55 +210,126 @@ internal sealed class AimlockDetector
 			if (!b.Accessor.HasField("viewangles"))
 				continue;
 
+			// Use base.Viewangles for continuous aimlock tracking (matches CS2AC Legacy AimlockModule::OnSetupMove)
 			QAngle angles = b.Viewangles;
-			int idx = pb.Attack1StartHistoryIndex;
-			int histCount = pb.InputHistory.Count;
-
-			if (idx >= 0 && idx < histCount)
-			{
-				var entry = pb.InputHistory.Get(idx);
-				if (entry.Accessor.HasField("view_angles"))
-				{
-					QAngle shotAngles = entry.ViewAngles;
-					if (AimMath.IsFinite(shotAngles))
-						angles = shotAngles;
-				}
-			}
-
-			if (!AimMath.IsFinite(angles))
-				continue;
-
-			st.Commands.Add(new AimlockCommand
-			{
-				CommandNumber = number,
-				Angles = angles
-			});
-
-			if (st.Commands.Count > 128)
-				st.Commands.RemoveAt(0);
+			RecordCommand(player, number, angles);
 		}
 	}
 
-	private static bool MeetsCoverage(int onTarget, int samples) =>
-		samples > 0 && onTarget * 20 >= samples * 19; // 95% on-target coverage
-
-	private static QAngle Bearing(in Vector eye, in Vector target)
+	internal void RecordCommand(IPlayer player, int commandNumber, QAngle angles)
 	{
-		Vector delta = new(target.X - eye.X, target.Y - eye.Y, target.Z - eye.Z);
-		float horizontal = MathF.Sqrt(delta.X * delta.X + delta.Y * delta.Y);
-		const float rad2Deg = 180.0f / MathF.PI;
-		return new QAngle(
-			-MathF.Atan2(delta.Z, horizontal) * rad2Deg,
-			MathF.Atan2(delta.Y, delta.X) * rad2Deg,
-			0.0f);
+		if (!_config.Enabled || !AimbotDetector.IsEligibleHuman(player))
+			return;
+
+		int id = player.PlayerID;
+		if (id < 0 || id >= _players.Length || !AimMath.IsFinite(angles))
+			return;
+
+		var st = _players[id];
+		for (int ci = st.Commands.Count - 1; ci >= 0; ci--)
+		{
+			if (st.Commands[ci].CommandNumber == commandNumber)
+				return;
+			if (st.Commands[ci].CommandNumber < commandNumber)
+				break;
+		}
+
+		st.Commands.Add(new AimlockCommand
+		{
+			CommandNumber = commandNumber,
+			Angles = angles
+		});
+
+		if (st.Commands.Count > 128)
+			st.Commands.RemoveAt(0);
 	}
 
-	private static int EstimateVisualLag(IPlayer player)
+	private static bool MeetsCoverage(int onTarget, int samples) =>
+		samples > 0 && onTarget * 20 >= samples * 19; // >= 95% on-target coverage
+
+	private static bool MeetsOcclusionRatio(int occludedOnTarget, int onTarget) =>
+		onTarget > 0 && occludedOnTarget * 10 >= onTarget * 7; // >= 70% occluded while locked
+
+	internal static int EstimateVisualLag(IPlayer player)
 	{
-		uint pingMs = player.Controller?.Ping ?? 0;
-		float rttSeconds = Math.Clamp(pingMs / 1000.0f, 0.0f, 2.0f);
+		float rttSeconds = 0.0f;
+		try
+		{
+			var netChan = player.ServerSideClient?.NetChannel;
+			if (netChan != null && float.IsFinite(netChan.EngineLatency) && netChan.EngineLatency >= 0.0f)
+				rttSeconds = netChan.EngineLatency;
+		}
+		catch { }
+
+		if (rttSeconds <= 0.0f)
+		{
+			uint pingMs = PlayerSnapshotProvider.GetPing(player);
+			rttSeconds = pingMs / 1000.0f;
+		}
+
+		rttSeconds = Math.Clamp(rttSeconds, 0.0f, 2.0f);
+
 		float interpTicks = 1.0f;
+		try
+		{
+			string? interpStr = player.GetClientConvarValue("cl_interp_ratio");
+			if (!string.IsNullOrWhiteSpace(interpStr) &&
+				float.TryParse(interpStr, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsedInterp) &&
+				float.IsFinite(parsedInterp) &&
+				parsedInterp >= 0.0f &&
+				parsedInterp <= MaximumInterpolationTicks)
+			{
+				interpTicks = parsedInterp == 0.0f ? 1.0f : parsedInterp;
+			}
+		}
+		catch { }
+
 		return Math.Max(0, (int)MathF.Round(rttSeconds * 64.0f + interpTicks));
+	}
+
+	private bool HasOcclusionCheck => _config.RequireWallOcclusion && (_traceManager != null || _isOccludedOverride != null);
+
+	private bool IsTargetOccluded(IPlayer observer, in Vector eye, in Vector targetPoint, int observerIndex, int targetIndex)
+	{
+		if (_isOccludedOverride != null)
+			return _isOccludedOverride(eye, targetPoint, observerIndex, targetIndex);
+
+		if (_traceManager == null)
+			return true;
+
+		try
+		{
+			Vector dir = targetPoint - eye;
+			float dist = dir.Length();
+			if (dist <= 32.0f)
+				return false;
+
+			Vector normDir = new(dir.X / dist, dir.Y / dist, dir.Z / dist);
+			float startOffset = Math.Min(24.0f, dist * 0.25f);
+			Vector traceStart = new(eye.X + normDir.X * startOffset, eye.Y + normDir.Y * startOffset, eye.Z + normDir.Z * startOffset);
+			Vector traceEnd = new(targetPoint.X - normDir.X * 4.0f, targetPoint.Y - normDir.Y * 4.0f, targetPoint.Z - normDir.Z * 4.0f);
+			float traceLen = traceStart.Distance(traceEnd);
+
+			var ignoreList = new List<SwiftlyS2.Shared.SchemaDefinitions.CEntityInstance>(2);
+			if (observer.PlayerPawn is { IsValid: true } obsPawn)
+				ignoreList.Add(obsPawn);
+			var targetPlayer = _getPlayer(targetIndex);
+			if (targetPlayer?.PlayerPawn is { IsValid: true } tgtPawn)
+				ignoreList.Add(tgtPawn);
+
+			var traceParams = new TraceParams
+			{
+				InteractWith = MaskTrace.Solid,
+				EntitiesToIgnore = ignoreList
+			};
+
+			var trace = _traceManager.TraceShapeLine(traceStart, traceEnd, traceParams);
+			return trace.DidHit && !trace.StartInSolid && trace.Distance < traceLen - 16.0f;
+		}
+		catch
+		{
+			return false;
+		}
 	}
 
 	private bool MeasureTarget(
@@ -260,11 +338,13 @@ internal sealed class AimlockDetector
 		int bodyPoint,
 		in Vector aimForward,
 		out QAngle bearing,
+		out Vector targetPoint,
 		out float error,
 		out float maximumError,
 		out float requiredTargetDisplacement)
 	{
 		bearing = default;
+		targetPoint = default;
 		error = 180.0f;
 		maximumError = 0.0f;
 		requiredTargetDisplacement = 0.0f;
@@ -272,7 +352,8 @@ internal sealed class AimlockDetector
 		if (bodyPoint < 0 || bodyPoint >= BodyHeights.Length)
 			return false;
 
-		Vector targetPoint = new(target.Origin.X, target.Origin.Y, target.Origin.Z + BodyHeights[bodyPoint]);
+		float height = AimMath.BodyHeight(bodyPoint, target.Crouched);
+		targetPoint = new(target.Origin.X, target.Origin.Y, target.Origin.Z + height);
 		Vector direction = new(targetPoint.X - sample.EyePosition.X, targetPoint.Y - sample.EyePosition.Y, targetPoint.Z - sample.EyePosition.Z);
 		float targetDistance = direction.Length();
 
@@ -281,12 +362,11 @@ internal sealed class AimlockDetector
 
 		Vector dirNorm = new(direction.X / targetDistance, direction.Y / targetDistance, direction.Z / targetDistance);
 		float dot = Math.Clamp(AimMath.Dot(aimForward, dirNorm), -1.0f, 1.0f);
-		const float rad2Deg = 180.0f / MathF.PI;
 
-		error = MathF.Acos(dot) * rad2Deg;
-		maximumError = MathF.Atan2(PlayerHalfWidth, targetDistance) * rad2Deg;
-		requiredTargetDisplacement = MathF.Atan2(MinimumTargetTravel, targetDistance) * rad2Deg;
-		bearing = Bearing(sample.EyePosition, targetPoint);
+		error = MathF.Acos(dot) * AimMath.Rad2Deg;
+		maximumError = MathF.Atan2(PlayerHalfWidth, targetDistance) * AimMath.Rad2Deg;
+		requiredTargetDisplacement = MathF.Atan2(MinimumTargetTravel, targetDistance) * AimMath.Rad2Deg;
+		bearing = AimMath.Bearing(sample.EyePosition, targetPoint);
 
 		return float.IsFinite(error) && float.IsFinite(maximumError) && float.IsFinite(requiredTargetDisplacement) && AimMath.IsFinite(bearing);
 	}
@@ -300,11 +380,13 @@ internal sealed class AimlockDetector
 		int bodyPoint,
 		in Vector aimForward,
 		out QAngle bearing,
+		out Vector targetPoint,
 		out float error,
 		out float maximumError,
 		out float requiredTargetDisplacement)
 	{
 		bearing = default;
+		targetPoint = default;
 		error = 180.0f;
 		maximumError = 0.0f;
 		requiredTargetDisplacement = 0.0f;
@@ -329,10 +411,10 @@ internal sealed class AimlockDetector
 		if (dist < MinimumDistance)
 			return false;
 
-		return MeasureTarget(sample, historicalTarget, bodyPoint, aimForward, out bearing, out error, out maximumError, out requiredTargetDisplacement);
+		return MeasureTarget(sample, historicalTarget, bodyPoint, aimForward, out bearing, out targetPoint, out error, out maximumError, out requiredTargetDisplacement);
 	}
 
-	private readonly record struct Candidate(QAngle Bearing, float Error, int TargetIndex, int BodyPoint, int LagTicks, bool Valid);
+	private readonly record struct Candidate(QAngle Bearing, Vector TargetPoint, float Error, int TargetIndex, int BodyPoint, int LagTicks, bool Valid);
 
 	private Candidate FindCandidate(AimlockSample sample, PositionFrame currentFrame, int observerIndex, int estimateTicks)
 	{
@@ -361,14 +443,13 @@ internal sealed class AimlockDetector
 			if (!currentTarget.Valid || !currentTarget.Alive || currentTarget.Teleported || !_areEnemies(observerIndex, targetIndex))
 				continue;
 
-			// Fast angular cone pre-filter: Check all 3 body points (feet, chest, head)
-			// Solves headshot and close-range elevation disparity while maintaining sub-microsecond pre-filtering
+			// Fast angular cone pre-filter: Check all 3 body points
 			bool withinCone = false;
 			for (int bp = 0; bp < BodyHeights.Length; bp++)
 			{
 				float bx = currentTarget.Origin.X - sample.EyePosition.X;
 				float by = currentTarget.Origin.Y - sample.EyePosition.Y;
-				float bz = (currentTarget.Origin.Z + BodyHeights[bp]) - sample.EyePosition.Z;
+				float bz = (currentTarget.Origin.Z + AimMath.BodyHeight(bp, currentTarget.Crouched)) - sample.EyePosition.Z;
 				float bDistSq = bx * bx + by * by + bz * bz;
 
 				if (bDistSq < minDistSq)
@@ -378,8 +459,6 @@ internal sealed class AimlockDetector
 				if (bDot <= 0.0f)
 					continue;
 
-				// cos(25°) ≈ 0.906. Using squared comparison: dot^2 / distSq >= cos^2(25°) ≈ 0.821
-				// Eliminates targets outside a 25-degree cone around any body point without requiring MathF.Sqrt.
 				if (bDot * bDot >= 0.82f * bDistSq)
 				{
 					withinCone = true;
@@ -405,7 +484,7 @@ internal sealed class AimlockDetector
 
 				for (int bodyPoint = 0; bodyPoint < BodyHeights.Length; bodyPoint++)
 				{
-					if (!MeasureTarget(sample, historicalTarget, bodyPoint, aimForward, out var bearing, out var error, out var maximumError, out _) || error > maximumError)
+					if (!MeasureTarget(sample, historicalTarget, bodyPoint, aimForward, out var bearing, out var targetPt, out var error, out var maximumError, out _) || error > maximumError)
 						continue;
 
 					if (matchedTarget < 0)
@@ -414,7 +493,7 @@ internal sealed class AimlockDetector
 						ambiguous = true;
 
 					if (error < (best.Valid ? best.Error : 180.0f))
-						best = new Candidate(bearing, error, targetIndex, bodyPoint, lagTicks, true);
+						best = new Candidate(bearing, targetPt, error, targetIndex, bodyPoint, lagTicks, true);
 				}
 			}
 		}
@@ -427,7 +506,7 @@ internal sealed class AimlockDetector
 
 	public void OnSetupMove(IPlayer player, int commandNumber, int currentTick)
 	{
-		if (!_config.Enabled || !AimbotDetector.IsEligibleHuman(player) || !player.IsAlive)
+		if (!_config.Enabled || !AimbotDetector.IsEligibleHuman(player) || !PlayerSnapshotProvider.IsAlive(player))
 			return;
 
 		int id = player.PlayerID;
@@ -438,26 +517,15 @@ internal sealed class AimlockDetector
 		if (currentTick == st.LastProcessedTick)
 			return;
 
-		var pawn = player.PlayerPawn;
-		if (pawn is null)
+		if (!PlayerSnapshotProvider.TryGetPawnTransform(player, out _, out var eye, out var pawnEyeAngles, out _, out _, out _, out _, out _))
 		{
 			st.Track.Clear();
 			st.Pending = default;
 			return;
 		}
 
-		Vector? maybeOrigin = pawn.AbsOrigin;
-		if (!maybeOrigin.HasValue || !AimMath.IsFinite(maybeOrigin.Value))
-		{
-			st.Track.Clear();
-			st.Pending = default;
-			return;
-		}
-
-		Vector origin = maybeOrigin.Value;
-		Vector eye = pawn.EyePosition ?? new Vector(origin.X, origin.Y, origin.Z + 64.0f);
 		var cmd = st.Commands.FindLast(c => c.CommandNumber == commandNumber);
-		QAngle angles = cmd != null ? cmd.Angles : pawn.EyeAngles;
+		QAngle angles = cmd != null ? cmd.Angles : pawnEyeAngles;
 
 		if (!AimMath.IsFinite(angles) || !AimMath.IsFinite(eye))
 		{
@@ -480,23 +548,29 @@ internal sealed class AimlockDetector
 		if (!_config.Enabled)
 			return;
 
+		var frame = _findFrame(currentTick);
+
 		for (int index = 0; index < AimbotDetector.MaxPlayers; index++)
 		{
-			var player = _getPlayer(index);
-			if (player == null || !AimbotDetector.IsEligibleHuman(player) || !player.IsAlive)
+			var st = _players[index];
+			if (!st.Pending.Valid)
 			{
-				_players[index].Reset();
+				if (frame != null && (!frame.Players[index].Valid || !frame.Players[index].Alive))
+					st.Reset();
 				continue;
 			}
 
-			var st = _players[index];
-			if (!st.Pending.Valid)
+			var player = _getPlayer(index);
+			if (player == null || !AimbotDetector.IsEligibleHuman(player) || !player.IsAlive)
+			{
+				st.Reset();
 				continue;
+			}
 
 			var sample = st.Pending;
 			st.Pending = default;
 
-			if (sample.ServerTick > currentTick || currentTick - sample.ServerTick > 2 || sample.ServerTick <= st.LastProcessedTick || _findFrame(sample.ServerTick) == null)
+			if (sample.ServerTick != currentTick || sample.ServerTick <= st.LastProcessedTick || _findFrame(sample.ServerTick) == null)
 			{
 				if (st.Track.TargetIndex >= 0 && st.Track.Samples > 16)
 					_debug($"[Aimlock] {Name(player)} tracking reset: snapshot mismatch (sampleTick={sample.ServerTick}, currentTick={currentTick}, lastProcessed={st.LastProcessedTick}).");
@@ -509,14 +583,30 @@ internal sealed class AimlockDetector
 		}
 	}
 
-	private static AimlockLagHypothesis? BestHypothesis(AimlockTrack track, bool requireEvidence)
+	private AimlockLagHypothesis? BestHypothesis(AimlockTrack track, bool requireEvidence)
 	{
 		AimlockLagHypothesis? best = null;
+		bool checkOcclusion = HasOcclusionCheck;
+
 		for (int index = 0; index < track.HypothesisCount; index++)
 		{
 			var hypothesis = track.Hypotheses[index];
-			if (!hypothesis.Valid || (requireEvidence && (!MeetsCoverage(hypothesis.OnTargetSamples, track.Samples) || hypothesis.MaximumTargetDisplacement < hypothesis.RequiredTargetDisplacement)))
+			if (!hypothesis.Valid)
 				continue;
+
+			if (requireEvidence)
+			{
+				if (!MeetsCoverage(hypothesis.OnTargetSamples, track.Samples) ||
+					hypothesis.MaximumTargetDisplacement < hypothesis.RequiredTargetDisplacement)
+				{
+					continue;
+				}
+
+				if (checkOcclusion && !MeetsOcclusionRatio(hypothesis.OccludedOnTargetSamples, hypothesis.OnTargetSamples))
+				{
+					continue;
+				}
+			}
 
 			if (best == null || hypothesis.OnTargetSamples > best.Value.OnTargetSamples)
 				best = hypothesis;
@@ -550,7 +640,7 @@ internal sealed class AimlockDetector
 					continue;
 
 				if (EvaluateTarget(sample, currentFrame, historicalFrame, player.PlayerID, data.LatchedTarget, data.LatchedBodyPoint, aimForward,
-					out _, out var error, out var maximumError, out _) && error <= maximumError)
+					out _, out _, out var error, out var maximumError, out _) && error <= maximumError)
 				{
 					stillLocked = true;
 					break;
@@ -583,12 +673,16 @@ internal sealed class AimlockDetector
 			if (!candidate.Valid)
 				return;
 
+			bool checkOcclusion = HasOcclusionCheck;
+			bool initialOccluded = !checkOcclusion || IsTargetOccluded(player, sample.EyePosition, candidate.TargetPoint, player.PlayerID, candidate.TargetIndex);
+
 			data.Track.Clear();
 			data.Track.TargetIndex = candidate.TargetIndex;
 			data.Track.BodyPoint = candidate.BodyPoint;
 			data.Track.StartServerTick = sample.ServerTick;
 			data.Track.LastServerTick = sample.ServerTick;
 			data.Track.Samples = 1;
+			data.Track.MissingTicks = 0;
 
 			int firstLag = Math.Max(0, estTicks - LagSearchRadius);
 			int lastLag = estTicks + LagSearchRadius;
@@ -600,16 +694,18 @@ internal sealed class AimlockDetector
 					continue;
 
 				if (!EvaluateTarget(sample, currentFrame, historicalFrame, player.PlayerID, candidate.TargetIndex, candidate.BodyPoint, aimForward,
-					out var bearing, out var error, out var maximumError, out var reqDisplacement))
+					out var bearing, out _, out var error, out var maximumError, out var reqDisplacement))
 					continue;
 
+				bool onTarget = error <= maximumError;
 				data.Track.Hypotheses[data.Track.HypothesisCount++] = new AimlockLagHypothesis
 				{
 					StartBearing = bearing,
 					MaximumTargetDisplacement = 0.0f,
 					RequiredTargetDisplacement = reqDisplacement,
 					LagTicks = lagTicks,
-					OnTargetSamples = error <= maximumError ? 1 : 0,
+					OnTargetSamples = onTarget ? 1 : 0,
+					OccludedOnTargetSamples = (onTarget && initialOccluded) ? 1 : 0,
 					Valid = true
 				};
 			}
@@ -631,8 +727,13 @@ internal sealed class AimlockDetector
 		}
 
 		int serverTickDelta = sample.ServerTick - data.Track.LastServerTick;
-		if (serverTickDelta < 1 || serverTickDelta > 3)
+
+		// Explicit missing-sample handling:
+		// Never credit unobserved intervals as confirmed tracking samples!
+		// Allow at most a 1-tick gap (serverTickDelta == 2) up to MaxMissingTicksPerEpisode (3) before resetting the track.
+		if (serverTickDelta < 1 || serverTickDelta > 2)
 		{
+			StatMissingTickResets++;
 			if (data.Track.Samples > 16)
 				_debug($"[Aimlock] {Name(player)} tracking reset: simulated ticks not consecutive (delta={serverTickDelta}).");
 			data.Track.Clear();
@@ -640,8 +741,26 @@ internal sealed class AimlockDetector
 			return;
 		}
 
-		data.Track.Samples += serverTickDelta;
+		if (serverTickDelta == 2)
+		{
+			data.Track.MissingTicks++;
+			if (data.Track.MissingTicks > MaxMissingTicksPerEpisode)
+			{
+				StatMissingTickResets++;
+				_debug($"[Aimlock] {Name(player)} tracking reset: exceeded maximum missing ticks ({data.Track.MissingTicks}).");
+				data.Track.Clear();
+				StartTrack();
+				return;
+			}
+		}
+
+		// Credit strictly 1 observed sample for this verified command
+		data.Track.Samples += 1;
 		int validHypotheses = 0;
+		bool anyOnTarget = false;
+		bool checkOcclusion = HasOcclusionCheck;
+		bool occlusionComputed = false;
+		bool isOccludedSample = true;
 
 		for (int index = 0; index < data.Track.HypothesisCount; index++)
 		{
@@ -651,7 +770,7 @@ internal sealed class AimlockDetector
 
 			var historicalFrame = _findFrame(sample.ServerTick - hypothesis.LagTicks);
 			if (historicalFrame == null || !EvaluateTarget(sample, currentFrame, historicalFrame, player.PlayerID, data.Track.TargetIndex, data.Track.BodyPoint, aimForward,
-				out var bearing, out var error, out var maximumError, out _))
+				out var bearing, out var targetPoint, out var error, out var maximumError, out _))
 			{
 				hypothesis.Valid = false;
 				continue;
@@ -666,7 +785,24 @@ internal sealed class AimlockDetector
 
 			validHypotheses++;
 			if (error <= maximumError)
-				hypothesis.OnTargetSamples += serverTickDelta;
+			{
+				anyOnTarget = true;
+				hypothesis.OnTargetSamples += 1;
+				if (checkOcclusion)
+				{
+					if (!occlusionComputed)
+					{
+						isOccludedSample = IsTargetOccluded(player, sample.EyePosition, targetPoint, player.PlayerID, data.Track.TargetIndex);
+						occlusionComputed = true;
+					}
+					if (isOccludedSample)
+						hypothesis.OccludedOnTargetSamples += 1;
+				}
+				else
+				{
+					hypothesis.OccludedOnTargetSamples += 1;
+				}
+			}
 
 			hypothesis.MaximumTargetDisplacement = MathF.Max(hypothesis.MaximumTargetDisplacement, displacement);
 		}
@@ -679,19 +815,25 @@ internal sealed class AimlockDetector
 			return;
 		}
 
-		data.Track.LastServerTick = sample.ServerTick;
-
-		int elapsedTicks = sample.ServerTick - data.Track.StartServerTick;
-		if (elapsedTicks > 0 && elapsedTicks < TrackingTicks && elapsedTicks % RearmTicks == 0)
+		if (anyOnTarget)
 		{
-			var best = BestHypothesis(data.Track, requireEvidence: false);
-			if (best != null)
+			data.Track.OffTargetStreak = 0;
+		}
+		else
+		{
+			data.Track.OffTargetStreak++;
+			if (data.Track.OffTargetStreak > 3)
 			{
-				_debug($"[Aimlock] {Name(player)} episode: {elapsedTicks / 64.0f:F1}/2.0s, best delay {best.Value.LagTicks}t kept {best.Value.OnTargetSamples}/{data.Track.Samples} on target; target moved {best.Value.MaximumTargetDisplacement:F1}°/{best.Value.RequiredTargetDisplacement:F1}° required.");
+				data.Track.Clear();
+				StartTrack();
+				return;
 			}
 		}
 
-		if (elapsedTicks < TrackingTicks)
+		data.Track.LastServerTick = sample.ServerTick;
+
+		// Require actual observed samples >= TrackingTicks (never count missing gap ticks toward duration)
+		if (data.Track.Samples < TrackingTicks)
 			return;
 
 		var passing = BestHypothesis(data.Track, requireEvidence: true);
@@ -700,8 +842,26 @@ internal sealed class AimlockDetector
 			var best = BestHypothesis(data.Track, requireEvidence: false);
 			if (best != null)
 			{
-				_debug($"[Aimlock] {Name(player)} episode ended without evidence: best delay {best.Value.LagTicks}t kept {best.Value.OnTargetSamples}/{data.Track.Samples} on target; target moved {best.Value.MaximumTargetDisplacement:F1}°/{best.Value.RequiredTargetDisplacement:F1}° required.");
+				if (MeetsCoverage(best.Value.OnTargetSamples, data.Track.Samples) &&
+					best.Value.MaximumTargetDisplacement >= best.Value.RequiredTargetDisplacement &&
+					checkOcclusion &&
+					!MeetsOcclusionRatio(best.Value.OccludedOnTargetSamples, best.Value.OnTargetSamples))
+				{
+					StatVisibleRejected++;
+					_debug($"[Aimlock] {Name(player)} tracking ignored: target was visible in line-of-sight ({best.Value.OccludedOnTargetSamples}/{best.Value.OnTargetSamples} occluded).");
+				}
+				else
+				{
+					_debug($"[Aimlock] {Name(player)} episode ended without evidence: best delay {best.Value.LagTicks}t kept {best.Value.OnTargetSamples}/{data.Track.Samples} on target; target moved {best.Value.MaximumTargetDisplacement:F1}°/{best.Value.RequiredTargetDisplacement:F1}° required.");
+				}
 			}
+			data.Track.Clear();
+			return;
+		}
+
+		if (_networkSafety != null && _networkSafety.ShouldSkipDetection(player.PlayerID, out var netEv))
+		{
+			_debug($"[Aimlock] {Name(player)} tracking episode deferred due to network instability: {netEv.FormatSummary()}");
 			data.Track.Clear();
 			return;
 		}
@@ -713,19 +873,36 @@ internal sealed class AimlockDetector
 	{
 		StatIncidents++;
 		var now = DateTime.UtcNow;
+		ulong steamId = player.SteamID;
+
+		if (steamId > 0 && data.Incidents.Count == 0)
+		{
+			if (_persistentIncidents.TryGetValue(steamId, out var cached))
+			{
+				cached.RemoveAll(i => now - i.Time >= EvidenceWindow);
+				data.Incidents.AddRange(cached);
+			}
+		}
+
 		data.Incidents.RemoveAll(i => now - i.Time >= EvidenceWindow);
 
 		data.Incidents.Add(new AimlockIncident
 		{
 			Time = now,
 			OnTargetSamples = hypothesis.OnTargetSamples,
+			OccludedSamples = hypothesis.OccludedOnTargetSamples,
 			TotalSamples = data.Track.Samples,
 			Displacement = hypothesis.MaximumTargetDisplacement,
 			RequiredDisplacement = hypothesis.RequiredTargetDisplacement,
 			TargetId = data.Track.TargetIndex
 		});
 
-		_debug($"[Aimlock] {Name(player)} recorded aimlock episode: {hypothesis.OnTargetSamples}/{data.Track.Samples} on-target ticks, {hypothesis.MaximumTargetDisplacement:F1}°/{hypothesis.RequiredTargetDisplacement:F1}° displacement. Evidence: {data.Incidents.Count}/{_config.EvidenceThreshold}.");
+		if (steamId > 0)
+		{
+			_persistentIncidents[steamId] = new List<AimlockIncident>(data.Incidents);
+		}
+
+		_debug($"[Aimlock] {Name(player)} recorded aimlock episode: {hypothesis.OnTargetSamples}/{data.Track.Samples} on-target ticks ({hypothesis.OccludedOnTargetSamples} occluded), {hypothesis.MaximumTargetDisplacement:F1}°/{hypothesis.RequiredTargetDisplacement:F1}° displacement. Evidence: {data.Incidents.Count}/{_config.EvidenceThreshold}.");
 
 		if (data.Incidents.Count >= _config.EvidenceThreshold)
 		{
@@ -734,15 +911,18 @@ internal sealed class AimlockDetector
 			for (int i = 0; i < data.Incidents.Count; i++)
 			{
 				var inc = data.Incidents[i];
-				lines.Add($"{i + 1}. Locked {inc.OnTargetSamples}/{inc.TotalSamples} ticks ({inc.Displacement:F1}° target travel)");
+				lines.Add($"{i + 1}. Locked {inc.OnTargetSamples}/{inc.TotalSamples} observed ticks ({inc.OccludedSamples} occluded, {inc.Displacement:F1}° travel)");
 			}
 
-			string latest = $"Latest aimlock: pinned inside enemy hitbox hull for {hypothesis.OnTargetSamples}/{data.Track.Samples} ticks while target traversed {hypothesis.MaximumTargetDisplacement:F1}° across screen (required: {hypothesis.RequiredTargetDisplacement:F1}°). Evidence {data.Incidents.Count}/{_config.EvidenceThreshold} in 5 min.";
+			string latest = $"Latest aimlock: pinned inside enemy hitbox hull for {hypothesis.OnTargetSamples}/{data.Track.Samples} verified ticks ({hypothesis.OccludedOnTargetSamples} through solid cover) while target traversed {hypothesis.MaximumTargetDisplacement:F1}° across view (required: {hypothesis.RequiredTargetDisplacement:F1}°). Evidence {data.Incidents.Count}/{_config.EvidenceThreshold} in 5 min.";
 
 			string evidence = string.Join("\n", lines) + "\n" + latest;
 
 			_announce(player, "AIMLOCK", evidence);
 			data.Incidents.Clear();
+			if (steamId > 0)
+				_persistentIncidents.Remove(steamId);
+
 			data.Latched = true;
 			data.LatchedTarget = data.Track.TargetIndex;
 			data.LatchedBodyPoint = data.Track.BodyPoint;
