@@ -274,7 +274,7 @@ internal sealed class TriggerbotDetector
 				}
 			}
 
-			if (!AimMath.IsFinite(angles))
+			if (!AimMath.IsFinite(angles) || angles.X < -89.05f || angles.X > 89.05f || MathF.Abs(angles.Z) > 1.0f)
 				continue;
 
 			st.Commands.Add(new TriggerCommand
@@ -355,8 +355,10 @@ internal sealed class TriggerbotDetector
 
 			if (targetIndex >= 0)
 			{
-				// If the weapon was already discharging before target entered crosshair, discard (pre-firing / spray)
-				if (wasAlreadyAttacking)
+				// If the weapon was already discharging before target entered crosshair, discard (pre-firing / spray).
+				// Also check if the player was already in an active pre-fire tapping cadence (within last 16 ticks / 250ms).
+				bool isPrefiring = wasAlreadyAttacking || (st.LastFreshAttackCommand >= 0 && commandNumber - st.LastFreshAttackCommand <= 16);
+				if (isPrefiring)
 				{
 					st.ActiveMode = TriggerContactMode.AimDriven;
 				}
@@ -368,7 +370,8 @@ internal sealed class TriggerbotDetector
 						: TriggerContactMode.AimDriven;
 
 					StatAcquisitions++;
-					_debug($"[Triggerbot] {Name(player)} acquired target #{targetIndex} (mode: {st.ActiveMode}, cmd: {commandNumber}, holdTicks: {st.AngleHoldingTicks}).");
+					if (Utils.DebugMode)
+						_debug($"[Triggerbot] {Name(player)} acquired target #{targetIndex} (mode: {st.ActiveMode}, cmd: {commandNumber}, holdTicks: {st.AngleHoldingTicks}).");
 				}
 			}
 		}
@@ -406,9 +409,10 @@ internal sealed class TriggerbotDetector
 					st.Pending.RemoveAt(0);
 
 				StatPendingAttacks++;
-				_debug($"[Triggerbot] {Name(player)} attack pressed: reaction {reactionTicks} ticks on target #{targetIndex}.");
+				if (Utils.DebugMode)
+					_debug($"[Triggerbot] {Name(player)} attack pressed: reaction {reactionTicks} ticks on target #{targetIndex}.");
 			}
-			else
+			else if (Utils.DebugMode)
 			{
 				_debug($"[Triggerbot] {Name(player)} attack ignored due to smoke occlusion volume.");
 			}
@@ -489,7 +493,8 @@ internal sealed class TriggerbotDetector
 
 		if (!isUnnaturalReaction)
 		{
-			_debug($"[Triggerbot] {Name(attacker)} normal human reaction: {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms, mode: {pendingMatch.Mode}) on #{victim.PlayerID}.");
+			if (Utils.DebugMode)
+				_debug($"[Triggerbot] {Name(attacker)} normal human reaction: {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms, mode: {pendingMatch.Mode}) on #{victim.PlayerID}.");
 			return;
 		}
 
@@ -566,7 +571,8 @@ internal sealed class TriggerbotDetector
 			_persistentIncidents[steamId] = new List<TriggerIncident>(st.Incidents);
 		}
 
-		_debug($"[Triggerbot] {Name(attacker)} unnatural command delta: {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms cmd interval, mode: {pendingMatch.Mode}) on #{victim.PlayerID} dealing {damage} dmg. Evidence: {st.Incidents.Count}/{_config.EvidenceThreshold}.");
+		if (Utils.DebugMode)
+			_debug($"[Triggerbot] {Name(attacker)} unnatural command delta: {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms cmd interval, mode: {pendingMatch.Mode}) on #{victim.PlayerID} dealing {damage} dmg. Evidence: {st.Incidents.Count}/{_config.EvidenceThreshold}.");
 
 		if (st.Incidents.Count >= _config.EvidenceThreshold)
 		{

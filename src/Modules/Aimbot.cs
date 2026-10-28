@@ -264,9 +264,14 @@ internal sealed class AimbotDetector
 			st.LastHistCount = histCount;
 			st.LastHasVA = hasVA;
 
-			if (!AimMath.IsFinite(angles))
+			// Anti-Untrusted deterministic exploit check:
+			// Genuine CS2 client clamps pitch to [-89.0°, +89.0°] and roll to 0.0°.
+			// NaN, Infinity, out-of-bounds pitch, or roll > 1.0° indicate memory manipulation / untrusted anti-aim.
+			if (!AimMath.IsFinite(angles) || angles.X < -89.05f || angles.X > 89.05f || MathF.Abs(angles.Z) > 1.0f)
 			{
 				StatSkipNonFinite++;
+				StatDetections++;
+				_announce(player, "ANTI_UNTRUSTED", $"Invalid viewangles: Pitch {angles.X:F2}°, Yaw {angles.Y:F2}°, Roll {angles.Z:F2}°. Deterministic exploit.");
 				continue;
 			}
 
@@ -871,7 +876,7 @@ internal sealed class AimbotDetector
 				if (isBlatantLaserTrajectory)
 					isBlatantLaser = true;
 			}
-			else
+			else if (Utils.DebugMode)
 			{
 				_debug($"{Name(attacker)} smooth curve rejected: movement {smoothMovement:F2}/{_settings.SmoothMinimumMovement:F2}, " +
 					   $"error {smoothBefore:F2}->{smoothAfter:F2}/{SmoothMaximumFinalError:F2}, path {efficiency * 100:F1}%, steps {steps}/{SmoothMinimumSteps}, shrinking {shrinking}.");
@@ -882,14 +887,17 @@ internal sealed class AimbotDetector
 		Clear();
 		if (!suspicious || !ruleMatched)
 		{
-			if (reusedSnap)
-				_debug($"{Name(attacker)} ignored a snap that already counted for an earlier damaging shot.");
+			if (Utils.DebugMode)
+			{
+				if (reusedSnap)
+					_debug($"{Name(attacker)} ignored a snap that already counted for an earlier damaging shot.");
 
-			else if (measuredMovements == 0)
-				_debug($"{Name(attacker)} damaging shot rejected because {measurementFailure}.");
+				else if (measuredMovements == 0)
+					_debug($"{Name(attacker)} damaging shot rejected because {measurementFailure}.");
 
-			else
-				_debug($"{Name(attacker)} damaging shot rejected after {measuredMovements} adjacent movements (stopped: {measurementFailure}): largest {largestMeasuredSnap:F2}°, target error {measuredBefore:F2} -> {measuredAfter:F2}.");
+				else
+					_debug($"{Name(attacker)} damaging shot rejected after {measuredMovements} adjacent movements (stopped: {measurementFailure}): largest {largestMeasuredSnap:F2}°, target error {measuredBefore:F2} -> {measuredAfter:F2}.");
+			}
 
 			return true;
 		}
@@ -930,7 +938,8 @@ internal sealed class AimbotDetector
 			? " [BLATANT LASER: zero-jitter straight trajectory]"
 			: (isBlatantSnap ? " [BLATANT SNAP: >= 90° in <= 1 tick]" : "");
 
-		_debug($"{Name(attacker)} counted {matchedRule}{blatantTag} {largestSnap:F2}°, error {bestBefore:F2} -> {bestAfter:F2}, evidence {incidents.Count}/{threshold}.");
+		if (Utils.DebugMode)
+			_debug($"{Name(attacker)} counted {matchedRule}{blatantTag} {largestSnap:F2}°, error {bestBefore:F2} -> {bestAfter:F2}, evidence {incidents.Count}/{threshold}.");
 
 		if (incidents.Count >= threshold)
 		{
