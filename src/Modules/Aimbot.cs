@@ -136,7 +136,7 @@ internal sealed class AimbotDetector
 	private readonly Func<int, IPlayer?> _getPlayer;
 
 	private readonly PlayerState[] _players = new PlayerState[MaxPlayers + 1];
-	private readonly List<PositionFrame> _frames = new();
+	private readonly PositionFrame[] _frames = new PositionFrame[PositionHistoryLimit];
 
 	public void UpdateConfig(AimbotConfig settings) => _settings = settings;
 
@@ -147,12 +147,17 @@ internal sealed class AimbotDetector
 		_announce = announce;
 		_debug = debug;
 		for (int i = 0; i < _players.Length; i++) _players[i] = new PlayerState();
+		for (int i = 0; i < _frames.Length; i++) _frames[i] = new PositionFrame();
 	}
 
 	public void Reset()
 	{
 		for (int i = 0; i < _players.Length; i++) _players[i] = new PlayerState();
-		_frames.Clear();
+		for (int i = 0; i < _frames.Length; i++)
+		{
+			_frames[i].ServerTick = -1;
+			Array.Clear(_frames[i].Players);
+		}
 	}
 
 	public void OnClientDisconnect(int id)
@@ -162,8 +167,8 @@ internal sealed class AimbotDetector
 
 		_players[id] = new PlayerState();
 
-		foreach (var frame in _frames)
-			frame.Players[id] = default;
+		for (int i = 0; i < _frames.Length; i++)
+			_frames[i].Players[id] = default;
 	}
 
 	public static bool IsEligibleHuman(IPlayer? p) =>
@@ -199,7 +204,18 @@ internal sealed class AimbotDetector
 
 			StatUsercmds++;
 
-			if (st.Commands.Exists(c => c.CommandNumber == number))
+			bool isDup = false;
+			for (int ci = st.Commands.Count - 1; ci >= 0; ci--)
+			{
+				if (st.Commands[ci].CommandNumber == number)
+				{
+					isDup = true;
+					break;
+				}
+				if (st.Commands[ci].CommandNumber < number)
+					break;
+			}
+			if (isDup)
 			{
 				StatSkipDup++;
 				continue;
@@ -313,8 +329,13 @@ internal sealed class AimbotDetector
 
 	private void CaptureFrame(int tick)
 	{
-		var frame = new PositionFrame { ServerTick = tick };
-		var previous = _frames.Count > 0 ? _frames[^1] : null;
+		int slot = tick & (PositionHistoryLimit - 1);
+		var frame = _frames[slot];
+		frame.ServerTick = tick;
+
+		int prevSlot = (tick - 1) & (PositionHistoryLimit - 1);
+		var previous = _frames[prevSlot];
+		bool hasPrevious = previous.ServerTick == tick - 1;
 
 		for (int id = 0; id < MaxPlayers; id++)
 		{
@@ -322,18 +343,23 @@ internal sealed class AimbotDetector
 			var pawn = p?.PlayerPawn;
 
 			if (p == null || !p.IsValid || pawn == null || !pawn.IsValid)
+			{
+				frame.Players[id] = default;
 				continue;
+			}
 
 			Vector? maybeOrigin = pawn.AbsOrigin;
 			if (!maybeOrigin.HasValue || !AimMath.IsFinite(maybeOrigin.Value))
+			{
+				frame.Players[id] = default;
 				continue;
+			}
 
 			Vector origin = maybeOrigin.Value;
-
 			var eye = pawn.EyePosition ?? new Vector(origin.X, origin.Y, origin.Z + 64.0f);
 
 			bool teleported = false;
-			if (previous != null && previous.Players[id].Valid)
+			if (hasPrevious && previous.Players[id].Valid)
 				teleported = origin.Distance(previous.Players[id].Origin) > TeleportDistance;
 
 			frame.Players[id] = new TrackedPosition
@@ -346,35 +372,29 @@ internal sealed class AimbotDetector
 				Teleported = teleported,
 			};
 		}
-
-		if (previous != null && previous.ServerTick == tick)
-			_frames[^1] = frame;
-		else
-		{
-			_frames.Add(frame);
-			if (_frames.Count > PositionHistoryLimit)
-				_frames.RemoveAt(0);
-		}
 	}
 
 	public PositionFrame? FindFrame(int tick)
 	{
-		for (int i = _frames.Count - 1; i >= 0; i--)
-		{
-			if (_frames[i].ServerTick == tick)
-				return _frames[i];
-		}
-		return null;
+		if (tick < 0) return null;
+		int slot = tick & (PositionHistoryLimit - 1);
+		var frame = _frames[slot];
+		return frame.ServerTick == tick ? frame : null;
 	}
 
 	private bool FindPosition(int tick, int id, out TrackedPosition pos)
 	{
-		for (int i = _frames.Count - 1; i >= 0; i--)
+		if (tick < 0 || id < 0 || id > MaxPlayers)
 		{
-			if (_frames[i].ServerTick != tick)
-				continue;
+			pos = default;
+			return false;
+		}
 
-			pos = _frames[i].Players[id];
+		int slot = tick & (PositionHistoryLimit - 1);
+		var frame = _frames[slot];
+		if (frame.ServerTick == tick)
+		{
+			pos = frame.Players[id];
 			return pos.Valid;
 		}
 
@@ -413,32 +433,52 @@ internal sealed class AimbotDetector
 			else StatAgeGt1++;
 		}
 
-		var candidates = st.Commands
-			.Where(c =>
-				c.IsShot &&
-				c.Simulated &&
-				!c.Consumed &&
-				(long)currentTick - c.ServerTick is >= -1 and <= 1)
-			.ToArray();
-
-		if (candidates.Length != 1)
+		AimCommand? matchedCandidate = null;
+		int candidateCount = 0;
+		for (int ci = st.Commands.Count - 1; ci >= 0; ci--)
 		{
-			foreach (var candidate in candidates)
-				candidate.Consumed = true;
+			var c = st.Commands[ci];
+			if (c.IsShot && c.Simulated && !c.Consumed && (long)currentTick - c.ServerTick is >= -1 and <= 1)
+			{
+				candidateCount++;
+				if (candidateCount == 1)
+				{
+					matchedCandidate = c;
+				}
+				else
+				{
+					c.Consumed = true;
+				}
+			}
+		}
+
+		if (candidateCount != 1 || matchedCandidate == null)
+		{
+			if (matchedCandidate != null)
+				matchedCandidate.Consumed = true;
 
 			StatFireNoMatch++;
 
-			var lastShotCmd = st.Commands.LastOrDefault(c => c.IsShot);
-			int histShot = st.Commands.Count(c => c.IsShot);
-			LastFireDiag = lastShotCmd == null
-				? $"tick={currentTick} cands={candidates.Length} histShot=0 lastShot=none"
-				: $"tick={currentTick} cands={candidates.Length} histShot={histShot} lastShot=cmd{lastShotCmd.CommandNumber} sim={lastShotCmd.Simulated} serverTick={lastShotCmd.ServerTick} age={(lastShotCmd.ServerTick < 0 ? "NA" : $"{currentTick - lastShotCmd.ServerTick}")}";
+			AimCommand? lastShotCmd = null;
+			int histShot = 0;
+			for (int ci = st.Commands.Count - 1; ci >= 0; ci--)
+			{
+				if (st.Commands[ci].IsShot)
+				{
+					histShot++;
+					lastShotCmd ??= st.Commands[ci];
+				}
+			}
 
-			_debug($"{Name(player)} weapon_fire unmatched: {candidates.Length} candidate commands at tick {currentTick} (lastCmd idx={st.LastIdx} histCount={st.LastHistCount} hasVA={st.LastHasVA} recentShotCmds={st.Commands.Count(c => c.IsShot)}/{st.Commands.Count}).");
+			LastFireDiag = lastShotCmd == null
+				? $"tick={currentTick} cands={candidateCount} histShot=0 lastShot=none"
+				: $"tick={currentTick} cands={candidateCount} histShot={histShot} lastShot=cmd{lastShotCmd.CommandNumber} sim={lastShotCmd.Simulated} serverTick={lastShotCmd.ServerTick} age={(lastShotCmd.ServerTick < 0 ? "NA" : $"{currentTick - lastShotCmd.ServerTick}")}";
+
+			_debug($"{Name(player)} weapon_fire unmatched: {candidateCount} candidate commands at tick {currentTick} (lastCmd idx={st.LastIdx} histCount={st.LastHistCount} hasVA={st.LastHasVA} recentShotCmds={histShot}/{st.Commands.Count}).");
 			return;
 		}
 
-		var command = candidates[0];
+		var command = matchedCandidate;
 		command.Consumed = true;
 
 		st.Shots.Add(new ShotRecord
@@ -474,20 +514,27 @@ internal sealed class AimbotDetector
 
 		var st = _players[attacker.PlayerID];
 
-		var candidates = st.Shots
-			.Where(s =>
-				!s.HurtSeen &&
-				(long)currentTick - s.FireTick is >= 0 and <= 1
-				).ToArray();
+		ShotRecord? matchedShot = null;
+		int shotCount = 0;
+		for (int si = st.Shots.Count - 1; si >= 0; si--)
+		{
+			var s = st.Shots[si];
+			if (!s.HurtSeen && (long)currentTick - s.FireTick is >= 0 and <= 1)
+			{
+				shotCount++;
+				if (shotCount == 1)
+					matchedShot = s;
+			}
+		}
 
-		if (candidates.Length != 1)
+		if (shotCount != 1 || matchedShot == null)
 		{
 			StatHurtNoMatch++;
-			_debug($"{Name(attacker)} hurt unmatched: {candidates.Length} registered shots at tick {currentTick}.");
+			_debug($"{Name(attacker)} hurt unmatched: {shotCount} registered shots at tick {currentTick}.");
 			return null;
 		}
 
-		var shot = candidates[0];
+		var shot = matchedShot;
 		shot.HurtSeen = true;
 		shot.VictimId = victim.PlayerID;
 

@@ -182,7 +182,18 @@ internal sealed class AimlockDetector
 			var pb = cmd.CSGOUserCmd;
 			int number = (int)cmd.CommandNumber;
 
-			if (st.Commands.Exists(c => c.CommandNumber == number))
+			bool isDup = false;
+			for (int ci = st.Commands.Count - 1; ci >= 0; ci--)
+			{
+				if (st.Commands[ci].CommandNumber == number)
+				{
+					isDup = true;
+					break;
+				}
+				if (st.Commands[ci].CommandNumber < number)
+					break;
+			}
+			if (isDup)
 				continue;
 
 			if (!pb.Accessor.HasField("base"))
@@ -339,24 +350,41 @@ internal sealed class AimlockDetector
 
 		int firstLag = Math.Max(0, estimateTicks - LagSearchRadius);
 		int lastLag = estimateTicks + LagSearchRadius;
+		float minDistSq = MinimumDistance * MinimumDistance;
 
-		for (int lagTicks = firstLag; lagTicks <= lastLag; lagTicks++)
+		for (int targetIndex = 0; targetIndex < AimbotDetector.MaxPlayers; targetIndex++)
 		{
-			var historicalFrame = _findFrame(sample.ServerTick - lagTicks);
-			if (historicalFrame == null)
+			if (targetIndex == observerIndex)
 				continue;
 
-			for (int targetIndex = 0; targetIndex < AimbotDetector.MaxPlayers; targetIndex++)
+			var currentTarget = currentFrame.Players[targetIndex];
+			if (!currentTarget.Valid || !currentTarget.Alive || currentTarget.Teleported || !_areEnemies(observerIndex, targetIndex))
+				continue;
+
+			// Fast angular cone pre-filter: Reject targets not in front of observer within ~16 degrees
+			float dx = currentTarget.Origin.X - sample.EyePosition.X;
+			float dy = currentTarget.Origin.Y - sample.EyePosition.Y;
+			float dz = currentTarget.Origin.Z - sample.EyePosition.Z;
+			float distSq = dx * dx + dy * dy + dz * dz;
+
+			if (distSq < minDistSq)
+				continue;
+
+			float dot = dx * aimForward.X + dy * aimForward.Y + dz * aimForward.Z;
+			if (dot <= 0.0f)
+				continue;
+
+			float dist = MathF.Sqrt(distSq);
+			if (dot / dist < 0.96f) // cos(16.2°) ≈ 0.96: eliminate targets outside the crosshair cone
+				continue;
+
+			for (int lagTicks = firstLag; lagTicks <= lastLag; lagTicks++)
 			{
-				if (targetIndex == observerIndex)
+				var historicalFrame = _findFrame(sample.ServerTick - lagTicks);
+				if (historicalFrame == null)
 					continue;
 
-				var currentTarget = currentFrame.Players[targetIndex];
 				var historicalTarget = historicalFrame.Players[targetIndex];
-
-				if (!currentTarget.Valid || !currentTarget.Alive || currentTarget.Teleported || !_areEnemies(observerIndex, targetIndex))
-					continue;
-
 				if (!historicalTarget.Valid || !historicalTarget.Alive || historicalTarget.Teleported)
 					continue;
 
