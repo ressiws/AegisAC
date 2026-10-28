@@ -455,13 +455,13 @@ internal sealed class AimbotDetector
 		// Fallback for continuous automatic spray:
 		// In CS2 Protobuf usercmds, Attack1StartHistoryIndex is only set on the initial click frame.
 		// Subsequent bullets (2..30) of an automatic spray occur while mouse1 is continuously held (idx = -1).
-		// Correlate the weapon_fire event to the simulated command closest to currentTick.
+		// Correlate the weapon_fire event to the simulated command closest to currentTick (window: [-2, +2] ticks).
 		if (candidateCount == 0)
 		{
 			for (int ci = st.Commands.Count - 1; ci >= 0; ci--)
 			{
 				var c = st.Commands[ci];
-				if (c.Simulated && !c.Consumed && (long)currentTick - c.ServerTick is >= -1 and <= 1)
+				if (c.Simulated && !c.Consumed && (long)currentTick - c.ServerTick is >= -2 and <= 2)
 				{
 					candidateCount++;
 					if (matchedCandidate == null)
@@ -598,7 +598,7 @@ internal sealed class AimbotDetector
 
 	private bool MeetsSmoothThresholds(float movement, float improvement, float finalError, float efficiency, int steps, bool shrinking) =>
 		movement >= _settings.SmoothMinimumMovement && improvement >= SmoothMinimumImprovement && finalError <= SmoothMaximumFinalError
-		&& efficiency >= _settings.SmoothMinimumPathEfficiency && steps >= SmoothMinimumSteps && shrinking;
+		&& efficiency >= _settings.SmoothMinimumPathEfficiency && steps >= SmoothMinimumSteps && (shrinking || efficiency >= 0.98f);
 
 	private static string Name(IPlayer p) => p.Controller?.PlayerName ?? $"#{p.PlayerID}";
 

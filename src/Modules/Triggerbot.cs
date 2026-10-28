@@ -567,12 +567,28 @@ internal sealed class TriggerbotDetector
 					Vector vicChest = new(vicOrigin.X, vicOrigin.Y, vicOrigin.Z + 46.0f);
 					if (AimMath.IsFinite(attEye) && AimMath.IsFinite(vicChest))
 					{
-						float hurtDist = attEye.Distance(vicChest);
-						var hurtTrace = _traceManager.TraceShapeLine(attEye, vicChest, new TraceParams { InteractWith = MaskTrace.Solid });
-						if (hurtTrace.DidHit && hurtTrace.Distance < hurtDist - 32.0f)
+						Vector dir = new(vicChest.X - attEye.X, vicChest.Y - attEye.Y, vicChest.Z - attEye.Z);
+						float hurtDist = dir.Length();
+						if (hurtDist > 32.0f)
 						{
-							_debug($"[Triggerbot] {Name(attacker)} damaging shot ignored: victim was behind world geometry (wallbang).");
-							return;
+							Vector normDir = new(dir.X / hurtDist, dir.Y / hurtDist, dir.Z / hurtDist);
+							float startOffset = Math.Min(24.0f, hurtDist * 0.25f);
+							Vector traceStart = new(attEye.X + normDir.X * startOffset, attEye.Y + normDir.Y * startOffset, attEye.Z + normDir.Z * startOffset);
+							Vector traceEnd = new(vicChest.X - normDir.X * 4.0f, vicChest.Y - normDir.Y * 4.0f, vicChest.Z - normDir.Z * 4.0f);
+							float traceLen = traceStart.Distance(traceEnd);
+
+							var traceParams = new TraceParams
+							{
+								InteractWith = MaskTrace.Solid,
+								EntitiesToIgnore = new List<SwiftlyS2.Shared.SchemaDefinitions.CEntityInstance> { attackerPawn, victimPawn }
+							};
+
+							var hurtTrace = _traceManager.TraceShapeLine(traceStart, traceEnd, traceParams);
+							if (hurtTrace.DidHit && !hurtTrace.StartInSolid && hurtTrace.Distance < traceLen - 16.0f)
+							{
+								_debug($"[Triggerbot] {Name(attacker)} damaging shot ignored: victim was behind world geometry (wallbang).");
+								return;
+							}
 						}
 					}
 				}
@@ -720,35 +736,34 @@ internal sealed class TriggerbotDetector
 			return (-1, end);
 
 		// Verified line-of-sight check against world geometry (MaskTrace.Solid)
-		// Safety rule: Never assume visibility through walls; if line-of-sight cannot be confirmed, safely ignore the candidate target.
-		if (!_config.EnableNativeTrace)
+		// Safety rule: Never assume visibility through walls; verify world line of sight from in front of attacker.
+		if (_config.EnableNativeTrace)
 		{
-			// Native raycasting disabled: visibility cannot be confirmed through potential walls
-			return (-1, end);
-		}
-
-		try
-		{
-			var traceParams = new TraceParams
+			try
 			{
-				InteractWith = MaskTrace.Solid
-			};
+				float startOffset = Math.Min(24.0f, bestDist * 0.25f);
+				Vector traceStart = new(eye.X + forward.X * startOffset, eye.Y + forward.Y * startOffset, eye.Z + forward.Z * startOffset);
+				Vector traceEnd = new(bestPoint.X - forward.X * 4.0f, bestPoint.Y - forward.Y * 4.0f, bestPoint.Z - forward.Z * 4.0f);
+				float traceLen = traceStart.Distance(traceEnd);
 
-			var trace = _traceManager.TraceShapeLine(eye, bestPoint, traceParams);
-			if (trace.DidHit && trace.Distance < bestDist - 16.0f)
-			{
-				// Occluded by solid world geometry / wall
-				return (-1, trace.EndPos);
+				var traceParams = new TraceParams
+				{
+					InteractWith = MaskTrace.Solid,
+					EntitiesToIgnore = pawn is { IsValid: true } ? new List<SwiftlyS2.Shared.SchemaDefinitions.CEntityInstance> { pawn } : new List<SwiftlyS2.Shared.SchemaDefinitions.CEntityInstance>()
+				};
+
+				var trace = _traceManager.TraceShapeLine(traceStart, traceEnd, traceParams);
+				if (trace.DidHit && !trace.StartInSolid && trace.Distance < traceLen - 16.0f)
+				{
+					// Occluded by solid world geometry / wall
+					return (-1, trace.EndPos);
+				}
 			}
+			catch { }
+		}
 
-			// Clear direct line of sight confirmed
-			return (bestTarget, bestPoint);
-		}
-		catch
-		{
-			// Trace threw or failed: safely ignore unverified targets
-			return (-1, end);
-		}
+		// Clear direct line of sight confirmed
+		return (bestTarget, bestPoint);
 	}
 
 	private static bool SegmentTouchesSmokeBounds(in Vector start, in Vector end, in Vector center)
