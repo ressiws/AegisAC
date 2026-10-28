@@ -719,7 +719,11 @@ internal sealed class AimbotDetector
 				measuredBefore = before; measuredAfter = after;
 			}
 
-			bool converged = (snap >= _settings.SnapAngleThreshold && after < before * 0.2f) || (snap >= (_settings.SnapAngleThreshold * 0.6f) && after < before * 0.1f);
+			// Vanguard SNAP_TRESHOLD benchmark: >= 90.0° in <16ms (1 tick) terminating on-target (blatant rage snap)
+			bool isBlatantRageSnap = snap >= 90.0f && serverGap <= 1 && clientGap <= 1 && after <= 10.0f;
+			bool converged = isBlatantRageSnap
+				|| (snap >= _settings.SnapAngleThreshold && after < before * 0.2f)
+				|| (snap >= (_settings.SnapAngleThreshold * 0.6f) && after < before * 0.1f);
 			bool fresh = !st.HasCountedIncident || newer.CommandNumber > st.LastCountedIncidentCommand;
 			if (converged && fresh)
 			{

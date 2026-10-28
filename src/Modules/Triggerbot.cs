@@ -546,6 +546,23 @@ internal sealed class TriggerbotDetector
 			if (st.Incidents.Count >= _config.EvidenceThreshold)
 			{
 				StatDetections++;
+
+				// Vanguard MACRO_TRESHOLD / MIN_CLICK_VARIANCE verification:
+				// Real human reaction cadence exhibits biological variance (>0.05).
+				// Mechanical triggerbots and auto-clickers execute with near-zero timing variance (<0.01).
+				float meanTicks = 0.0f;
+				for (int i = 0; i < st.Incidents.Count; i++)
+					meanTicks += st.Incidents[i].ReactionTicks;
+				meanTicks /= st.Incidents.Count;
+
+				float varianceTicks = 0.0f;
+				for (int i = 0; i < st.Incidents.Count; i++)
+				{
+					float diff = st.Incidents[i].ReactionTicks - meanTicks;
+					varianceTicks += diff * diff;
+				}
+				varianceTicks /= st.Incidents.Count;
+
 				var lines = new List<string>();
 				for (int i = 0; i < st.Incidents.Count; i++)
 				{
@@ -553,7 +570,11 @@ internal sealed class TriggerbotDetector
 					lines.Add($"{i + 1}. {inc.ReactionTicks} ticks (~{inc.ReactionMs:F1}ms cmd interval) - {inc.Mode} ({inc.Weapon}, {inc.Damage} dmg)");
 				}
 
-				string latest = $"Latest damaging shot: command-to-acquisition delta of {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms cmd interval, mode: {pendingMatch.Mode}). Evidence {st.Incidents.Count}/{_config.EvidenceThreshold} in 5 min.";
+				string macroTag = varianceTicks < 0.05f
+					? $" (Machine-like cadence: timing variance {varianceTicks:F3} < 0.05 Vanguard benchmark)"
+					: "";
+
+				string latest = $"Latest damaging shot: command-to-acquisition delta of {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms cmd interval, mode: {pendingMatch.Mode}){macroTag}. Evidence {st.Incidents.Count}/{_config.EvidenceThreshold} in 5 min.";
 
 				string evidence = string.Join("\n", lines) + "\n" + latest;
 
