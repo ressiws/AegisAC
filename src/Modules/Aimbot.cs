@@ -137,6 +137,7 @@ internal sealed class AimbotDetector
 
 	private readonly PlayerState[] _players = new PlayerState[MaxPlayers + 1];
 	private readonly PositionFrame[] _frames = new PositionFrame[PositionHistoryLimit];
+	private readonly Dictionary<ulong, (List<AimbotIncident> Snap, List<AimbotIncident> Smooth)> _persistentEvidence = new();
 
 	public void UpdateConfig(AimbotConfig settings) => _settings = settings;
 
@@ -152,6 +153,7 @@ internal sealed class AimbotDetector
 
 	public void Reset()
 	{
+		_persistentEvidence.Clear();
 		for (int i = 0; i < _players.Length; i++) _players[i] = new PlayerState();
 		for (int i = 0; i < _frames.Length; i++)
 		{
@@ -895,12 +897,31 @@ internal sealed class AimbotDetector
 		st.LastCountedIncidentCommand = incidentCommand;
 		st.HasCountedIncident = true;
 
+		ulong steamId = attacker.SteamID;
 		var now = DateTime.UtcNow;
+
+		// Reconnect evidence preservation: restore unexpired incidents if player recently disconnected and reconnected
+		if (steamId > 0 && st.SnapEvidence.Count == 0 && st.SmoothEvidence.Count == 0)
+		{
+			if (_persistentEvidence.TryGetValue(steamId, out var cached))
+			{
+				cached.Snap.RemoveAll(i => now - i.Time >= EvidenceWindow);
+				cached.Smooth.RemoveAll(i => now - i.Time >= EvidenceWindow);
+				st.SnapEvidence.AddRange(cached.Snap);
+				st.SmoothEvidence.AddRange(cached.Smooth);
+			}
+		}
+
 		st.SnapEvidence.RemoveAll(i => now - i.Time >= EvidenceWindow);
 		st.SmoothEvidence.RemoveAll(i => now - i.Time >= EvidenceWindow);
 
 		var incidents = matchedRule == EvidenceType.SmoothConvergence ? st.SmoothEvidence : st.SnapEvidence;
 		incidents.Add(new AimbotIncident(now, matchedRule, largestSnap, bestBefore, bestAfter));
+
+		if (steamId > 0)
+		{
+			_persistentEvidence[steamId] = (new List<AimbotIncident>(st.SnapEvidence), new List<AimbotIncident>(st.SmoothEvidence));
+		}
 
 		bool isBlatant = isBlatantSnap || isBlatantLaser;
 		int threshold = isBlatant ? 1 : (matchedRule == EvidenceType.SmoothConvergence ? SmoothDetectionThreshold : SnapDetectionThreshold);
@@ -938,6 +959,8 @@ internal sealed class AimbotDetector
 			_announce(attacker, "AIMBOT", string.Join("\n", lines) + "\n" + latest);
 			st.SnapEvidence.Clear();
 			st.SmoothEvidence.Clear();
+			if (steamId > 0)
+				_persistentEvidence.Remove(steamId);
 		}
 
 		return true;

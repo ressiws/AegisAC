@@ -138,6 +138,7 @@ internal sealed class TriggerbotDetector
 	private readonly Action<string> _debug;
 
 	private readonly TriggerPlayerState[] _players = new TriggerPlayerState[AimbotDetector.MaxPlayers + 1];
+	private readonly Dictionary<ulong, List<TriggerIncident>> _persistentIncidents = new();
 	private readonly List<TriggerSmoke> _smokes = new();
 	private DateTime _smokeStateUnknownUntil = DateTime.MinValue;
 
@@ -169,6 +170,7 @@ internal sealed class TriggerbotDetector
 
 	public void Reset()
 	{
+		_persistentIncidents.Clear();
 		for (int i = 0; i < _players.Length; i++)
 			_players[i].Reset();
 
@@ -421,72 +423,10 @@ internal sealed class TriggerbotDetector
 
 	public void OnWeaponFire(IPlayer player, string weapon, int currentTick)
 	{
-		if (!_config.Enabled || !AimbotDetector.IsEligibleHuman(player))
-			return;
-
-		string normWeapon = weapon.StartsWith("weapon_", StringComparison.OrdinalIgnoreCase) ? weapon[7..] : weapon;
-		if (!BallisticWeapons.Contains(normWeapon))
-			return;
-
-		int id = player.PlayerID;
-		if (id < 0 || id >= _players.Length)
-			return;
-
-		var st = _players[id];
-		// Discard continuous spray bullets: a triggerbot initiates combat on fresh click, not on bullet #12 of an ongoing spray.
-		if (st.WasAttacking && st.Pending.Count > 0)
-			return;
-
-		int targetIndex = st.ActiveTarget;
-		int contactStart = st.ContactStartCommand;
-
-		if (targetIndex < 0)
-		{
-			// Check if contact was lost within the last 2 ticks due to weapon recoil punch
-			for (int t = 0; t < AimbotDetector.MaxPlayers; t++)
-			{
-				if (st.LastContactTick[t] >= 0 && currentTick - st.LastContactTick[t] <= 2)
-				{
-					targetIndex = t;
-					contactStart = st.ContactStartCommand >= 0 ? st.ContactStartCommand : st.LastCommandNumber - (currentTick - st.LastContactTick[t]);
-					break;
-				}
-			}
-		}
-
-		if (targetIndex < 0 || contactStart < 0)
-			return;
-
-		int cmdNum = st.LastCommandNumber >= 0 ? st.LastCommandNumber : currentTick;
-		int reactionTicks = Math.Max(0, cmdNum - contactStart);
-
-		bool alreadyPending = false;
-		for (int pi = st.Pending.Count - 1; pi >= 0; pi--)
-		{
-			if (st.Pending[pi].CommandNumber == cmdNum)
-			{
-				alreadyPending = true;
-				break;
-			}
-		}
-
-		if (!alreadyPending)
-		{
-			st.Pending.Add(new TriggerPendingAttack
-			{
-				CommandNumber = cmdNum,
-				TargetIndex = targetIndex,
-				ReactionTicks = reactionTicks,
-				Mode = st.ActiveMode,
-				SyntheticAnomalies = st.SyntheticInputAnomalies
-			});
-
-			while (st.Pending.Count > PendingLimit)
-				st.Pending.RemoveAt(0);
-
-			StatPendingAttacks++;
-			_debug($"[Triggerbot] {Name(player)} weapon_fire registered reaction: {reactionTicks} ticks on target #{targetIndex}.");
-		}
+		// Intentional no-op:
+		// Triggerbot initiation is strictly evaluated on fresh clicks (cmd.IsFreshAttack in OnSetupMove).
+		// Creating pending attacks from weapon_fire during automatic fire cycles leads to false positives
+		// when holding spray through doorways or corners (bullet #7 discharging 1-6 ticks after an enemy walks into the spray).
 	}
 
 	public void OnPlayerHurt(IPlayer attacker, IPlayer victim, string weapon, int damage, int? commandNumber)
@@ -597,6 +537,16 @@ internal sealed class TriggerbotDetector
 		}
 
 		var now = DateTime.UtcNow;
+		ulong steamId = attacker.SteamID;
+		if (steamId > 0 && st.Incidents.Count == 0)
+		{
+			if (_persistentIncidents.TryGetValue(steamId, out var cached))
+			{
+				cached.RemoveAll(i => now - i.Time >= EvidenceWindow);
+				st.Incidents.AddRange(cached);
+			}
+		}
+
 		st.Incidents.RemoveAll(i => now - i.Time >= EvidenceWindow);
 
 		st.Incidents.Add(new TriggerIncident
@@ -610,6 +560,11 @@ internal sealed class TriggerbotDetector
 			Mode = pendingMatch.Mode,
 			SyntheticAnomalies = pendingMatch.SyntheticAnomalies
 		});
+
+		if (steamId > 0)
+		{
+			_persistentIncidents[steamId] = new List<TriggerIncident>(st.Incidents);
+		}
 
 		_debug($"[Triggerbot] {Name(attacker)} unnatural command delta: {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms cmd interval, mode: {pendingMatch.Mode}) on #{victim.PlayerID} dealing {damage} dmg. Evidence: {st.Incidents.Count}/{_config.EvidenceThreshold}.");
 
@@ -654,6 +609,8 @@ internal sealed class TriggerbotDetector
 
 			_announce(attacker, "TRIGGERBOT", evidence);
 			st.Incidents.Clear();
+			if (steamId > 0)
+				_persistentIncidents.Remove(steamId);
 		}
 	}
 

@@ -277,12 +277,12 @@ AegisAC configurations are stored in `addons/swiftlys2/configs/plugins/AegisAC/c
     "Debug": false,
 
     // Command executed when kicking a player.
-    // Available placeholders: {userid}, {steamid}, {name}, {reason}
-    "KickCommand": "kickid {userid} \"[AegisAC] {reason}\"",
+    // Available placeholders: {userid}, {slot}, {steamid}, {name}, {reason}
+    "KickCommand": "sw_kick #{userid} \"[AegisAC] {reason}\"",
 
     // Command executed when banning a player.
-    // Available placeholders: {userid}, {steamid}, {name}, {reason}
-    "BanCommand": "banid 0 {steamid}; writeid; kickid {userid} \"[AegisAC] {reason}\"",
+    // Available placeholders: {userid}, {slot}, {steamid}, {name}, {reason}
+    "BanCommand": "sw_ban #{userid} 0 \"[AegisAC] {reason}\"; kickid {userid} \"[AegisAC] {reason}\"",
 
     // Aimbot detection module configuration
     "Aimbot": {

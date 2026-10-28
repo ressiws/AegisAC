@@ -111,8 +111,8 @@ public sealed class AegisConfig
 	[Description("Server console command template executed for kicking. Available placeholders: {userid}, {steamid}, {name}, {reason}.")]
 	public string KickCommand { get; set; } = "sw_kick #{userid} \"[AegisAC] {reason}\"";
 
-	[Description("Server console command template executed for banning. Available placeholders: {userid}, {steamid}, {name}, {reason}.")]
-	public string BanCommand { get; set; } = "banid 0 {steamid}; writeid; kickid {userid} \"[AegisAC] {reason}\"";
+	[Description("Server console command template executed for banning. Available placeholders: {userid}, {slot}, {steamid}, {name}, {reason}.")]
+	public string BanCommand { get; set; } = "sw_ban #{userid} 0 \"[AegisAC] {reason}\"; kickid {userid} \"[AegisAC] {reason}\"";
 
 	[Description("Aimbot detector module configuration.")]
 	public AimbotConfig Aimbot { get; set; } = new();

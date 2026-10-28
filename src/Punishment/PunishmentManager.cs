@@ -67,6 +67,14 @@ public sealed class PunishmentManager
 
 	private void ExecuteBan(IPlayer player, string name, string reason)
 	{
+		// If SteamID is unauthenticated (flexible mode / connection phase), kick by UserID instead of banning ID 0
+		if (player.SteamID == 0)
+		{
+			Utils.Log($" \x04[AegisAC]\x01 Player \x07{name}\x01 has unauthenticated SteamID (0). Kicking by UserID #{player.UserID} instead of banning.");
+			player.Kick($"[AegisAC] {reason}", default);
+			return;
+		}
+
 		if (!string.IsNullOrWhiteSpace(_config.BanCommand))
 		{
 			string cmd = FormatCommand(_config.BanCommand, player, name, reason);
