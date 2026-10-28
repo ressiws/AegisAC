@@ -78,6 +78,7 @@ internal sealed class TriggerPlayerState
 	public QAngle LastAngles;
 	public bool LastAnglesValid;
 	public bool WasAttacking;
+	public int AngleHoldingTicks;
 	public readonly int[] LastContactTick = new int[AimbotDetector.MaxPlayers + 1];
 	public readonly List<TriggerCommand> Commands = new();
 	public readonly List<TriggerPendingAttack> Pending = new();
@@ -96,6 +97,7 @@ internal sealed class TriggerPlayerState
 		ActiveMode = TriggerContactMode.TargetDriven;
 		LastAnglesValid = false;
 		WasAttacking = false;
+		AngleHoldingTicks = 0;
 		Array.Fill(LastContactTick, -1);
 		Commands.Clear();
 		Pending.Clear();
@@ -275,6 +277,7 @@ internal sealed class TriggerbotDetector
 
 		QAngle viewAngles = cmd != null ? cmd.Angles : pawn.EyeAngles;
 		bool isFreshAttack = cmd != null && cmd.IsFreshAttack;
+		bool wasAlreadyAttacking = st.WasAttacking;
 		st.WasAttacking = isFreshAttack;
 
 		if (commandNumber <= st.LastCommandNumber)
@@ -295,6 +298,16 @@ internal sealed class TriggerbotDetector
 			return;
 		}
 
+		float aimMovement = st.LastAnglesValid ? AimMath.AngularDistance(st.LastAngles, viewAngles) : 0.0f;
+		if (st.LastAnglesValid && float.IsFinite(aimMovement) && aimMovement <= HeldAngleMaximumDegrees)
+		{
+			st.AngleHoldingTicks++;
+		}
+		else
+		{
+			st.AngleHoldingTicks = 0;
+		}
+
 		Vector origin = pawn.AbsOrigin ?? default;
 		Vector eye = pawn.EyePosition ?? new Vector(origin.X, origin.Y, origin.Z + 64.0f);
 		if (!AimMath.IsFinite(eye))
@@ -310,14 +323,21 @@ internal sealed class TriggerbotDetector
 
 			if (targetIndex >= 0)
 			{
-				st.ContactStartCommand = commandNumber;
-				float aimMovement = st.LastAnglesValid ? AimMath.AngularDistance(st.LastAngles, viewAngles) : 0.0f;
-				st.ActiveMode = float.IsFinite(aimMovement) && aimMovement > HeldAngleMaximumDegrees
-					? TriggerContactMode.AimDriven
-					: TriggerContactMode.TargetDriven;
+				// If the weapon was already discharging before target entered crosshair, discard (pre-firing / spray)
+				if (wasAlreadyAttacking)
+				{
+					st.ActiveMode = TriggerContactMode.AimDriven;
+				}
+				else
+				{
+					st.ContactStartCommand = commandNumber;
+					st.ActiveMode = st.AngleHoldingTicks >= 3 && aimMovement <= HeldAngleMaximumDegrees
+						? TriggerContactMode.TargetDriven
+						: TriggerContactMode.AimDriven;
 
-				StatAcquisitions++;
-				_debug($"[Triggerbot] {Name(player)} acquired target #{targetIndex} (mode: {st.ActiveMode}, cmd: {commandNumber}).");
+					StatAcquisitions++;
+					_debug($"[Triggerbot] {Name(player)} acquired target #{targetIndex} (mode: {st.ActiveMode}, cmd: {commandNumber}, holdTicks: {st.AngleHoldingTicks}).");
+				}
 			}
 		}
 
@@ -477,6 +497,33 @@ internal sealed class TriggerbotDetector
 		if (pendingMatch.Mode != TriggerContactMode.TargetDriven)
 			return;
 
+		// Verify direct line-of-sight at damage resolution to reject wallbang / penetration shots
+		if (_config.EnableNativeTrace)
+		{
+			try
+			{
+				var victimPawn = victim.PlayerPawn;
+				var attackerPawn = attacker.PlayerPawn;
+				if (victimPawn is { IsValid: true } && attackerPawn is { IsValid: true })
+				{
+					Vector attEye = attackerPawn.EyePosition ?? default;
+					Vector vicOrigin = victimPawn.AbsOrigin ?? default;
+					Vector vicChest = new(vicOrigin.X, vicOrigin.Y, vicOrigin.Z + 46.0f);
+					if (AimMath.IsFinite(attEye) && AimMath.IsFinite(vicChest))
+					{
+						float hurtDist = attEye.Distance(vicChest);
+						var hurtTrace = _traceManager.TraceShapeLine(attEye, vicChest, new TraceParams { InteractWith = MaskTrace.Solid });
+						if (hurtTrace.DidHit && hurtTrace.Distance < hurtDist - 32.0f)
+						{
+							_debug($"[Triggerbot] {Name(attacker)} damaging shot ignored: victim was behind world geometry (wallbang).");
+							return;
+						}
+					}
+				}
+			}
+			catch { }
+		}
+
 		float reactionMs = pendingMatch.ReactionTicks * (1000.0f / 64.0f);
 		var now = DateTime.UtcNow;
 		st.Incidents.RemoveAll(i => now - i.Time >= EvidenceWindow);
@@ -494,7 +541,7 @@ internal sealed class TriggerbotDetector
 				Mode = pendingMatch.Mode
 			});
 
-			_debug($"[Triggerbot] {Name(attacker)} unnatural trigger reaction: {pendingMatch.ReactionTicks} ticks ({reactionMs:F1}ms <= {_config.MaxReactionTimeMs:F0}ms, mode: {pendingMatch.Mode}) on #{victim.PlayerID} dealing {damage} dmg. Evidence: {st.Incidents.Count}/{_config.EvidenceThreshold}.");
+			_debug($"[Triggerbot] {Name(attacker)} unnatural command delta: {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms cmd interval <= {_config.MaxReactionTimeMs:F0}ms, mode: {pendingMatch.Mode}) on #{victim.PlayerID} dealing {damage} dmg. Evidence: {st.Incidents.Count}/{_config.EvidenceThreshold}.");
 
 			if (st.Incidents.Count >= _config.EvidenceThreshold)
 			{
@@ -503,10 +550,10 @@ internal sealed class TriggerbotDetector
 				for (int i = 0; i < st.Incidents.Count; i++)
 				{
 					var inc = st.Incidents[i];
-					lines.Add($"{i + 1}. {inc.ReactionTicks} ticks ({inc.ReactionMs:F1}ms) - {inc.Mode} ({inc.Weapon}, {inc.Damage} dmg)");
+					lines.Add($"{i + 1}. {inc.ReactionTicks} ticks (~{inc.ReactionMs:F1}ms cmd interval) - {inc.Mode} ({inc.Weapon}, {inc.Damage} dmg)");
 				}
 
-				string latest = $"Latest damaging shot: fired {pendingMatch.ReactionTicks} ticks ({reactionMs:F1}ms) after crosshair target acquisition (mode: {pendingMatch.Mode}). Evidence {st.Incidents.Count}/{_config.EvidenceThreshold} in 5 min.";
+				string latest = $"Latest damaging shot: command-to-acquisition delta of {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms cmd interval, mode: {pendingMatch.Mode}). Evidence {st.Incidents.Count}/{_config.EvidenceThreshold} in 5 min.";
 
 				string evidence = string.Join("\n", lines) + "\n" + latest;
 
@@ -516,7 +563,7 @@ internal sealed class TriggerbotDetector
 		}
 		else
 		{
-			_debug($"[Triggerbot] {Name(attacker)} normal human reaction: {pendingMatch.ReactionTicks} ticks ({reactionMs:F1}ms > {_config.MaxReactionTimeMs:F0}ms, mode: {pendingMatch.Mode}) on #{victim.PlayerID}.");
+			_debug($"[Triggerbot] {Name(attacker)} normal human reaction: {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms > {_config.MaxReactionTimeMs:F0}ms, mode: {pendingMatch.Mode}) on #{victim.PlayerID}.");
 		}
 	}
 
@@ -589,27 +636,36 @@ internal sealed class TriggerbotDetector
 		if (bestTarget < 0)
 			return (-1, end);
 
-		// If native trace is explicitly enabled, verify world line-of-sight to the candidate target
-		if (_config.EnableNativeTrace)
+		// Verified line-of-sight check against world geometry (MaskTrace.Solid)
+		// Safety rule: Never assume visibility through walls; if line-of-sight cannot be confirmed, safely ignore the candidate target.
+		if (!_config.EnableNativeTrace)
 		{
-			try
-			{
-				var traceParams = new TraceParams
-				{
-					InteractWith = MaskTrace.Solid | MaskTrace.CsgoTeam1 | MaskTrace.CsgoTeam2
-				};
-
-				var trace = _traceManager.TraceShapeLine(eye, bestPoint, traceParams);
-				if (trace.DidHit && trace.Distance < bestDist - 24.0f)
-				{
-					// Occluded by world geometry / wall
-					return (-1, trace.EndPos);
-				}
-			}
-			catch { }
+			// Native raycasting disabled: visibility cannot be confirmed through potential walls
+			return (-1, end);
 		}
 
-		return (bestTarget, bestPoint);
+		try
+		{
+			var traceParams = new TraceParams
+			{
+				InteractWith = MaskTrace.Solid
+			};
+
+			var trace = _traceManager.TraceShapeLine(eye, bestPoint, traceParams);
+			if (trace.DidHit && trace.Distance < bestDist - 16.0f)
+			{
+				// Occluded by solid world geometry / wall
+				return (-1, trace.EndPos);
+			}
+
+			// Clear direct line of sight confirmed
+			return (bestTarget, bestPoint);
+		}
+		catch
+		{
+			// Trace threw or failed: safely ignore unverified targets
+			return (-1, end);
+		}
 	}
 
 	private static bool SegmentTouchesSmokeBounds(in Vector start, in Vector end, in Vector center)

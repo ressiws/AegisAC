@@ -361,21 +361,33 @@ internal sealed class AimlockDetector
 			if (!currentTarget.Valid || !currentTarget.Alive || currentTarget.Teleported || !_areEnemies(observerIndex, targetIndex))
 				continue;
 
-			// Fast angular cone pre-filter: Reject targets not in front of observer within ~16 degrees
-			float dx = currentTarget.Origin.X - sample.EyePosition.X;
-			float dy = currentTarget.Origin.Y - sample.EyePosition.Y;
-			float dz = currentTarget.Origin.Z - sample.EyePosition.Z;
-			float distSq = dx * dx + dy * dy + dz * dz;
+			// Fast angular cone pre-filter: Check all 3 body points (feet, chest, head)
+			// Solves headshot and close-range elevation disparity while maintaining sub-microsecond pre-filtering
+			bool withinCone = false;
+			for (int bp = 0; bp < BodyHeights.Length; bp++)
+			{
+				float bx = currentTarget.Origin.X - sample.EyePosition.X;
+				float by = currentTarget.Origin.Y - sample.EyePosition.Y;
+				float bz = (currentTarget.Origin.Z + BodyHeights[bp]) - sample.EyePosition.Z;
+				float bDistSq = bx * bx + by * by + bz * bz;
 
-			if (distSq < minDistSq)
-				continue;
+				if (bDistSq < minDistSq)
+					continue;
 
-			float dot = dx * aimForward.X + dy * aimForward.Y + dz * aimForward.Z;
-			if (dot <= 0.0f)
-				continue;
+				float bDot = bx * aimForward.X + by * aimForward.Y + bz * aimForward.Z;
+				if (bDot <= 0.0f)
+					continue;
 
-			float dist = MathF.Sqrt(distSq);
-			if (dot / dist < 0.96f) // cos(16.2°) ≈ 0.96: eliminate targets outside the crosshair cone
+				// cos(25°) ≈ 0.906. Using squared comparison: dot^2 / distSq >= cos^2(25°) ≈ 0.821
+				// Eliminates targets outside a 25-degree cone around any body point without requiring MathF.Sqrt.
+				if (bDot * bDot >= 0.82f * bDistSq)
+				{
+					withinCone = true;
+					break;
+				}
+			}
+
+			if (!withinCone)
 				continue;
 
 			for (int lagTicks = firstLag; lagTicks <= lastLag; lagTicks++)

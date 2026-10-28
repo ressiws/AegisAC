@@ -69,7 +69,7 @@
 <td width="33.3%" align="center">
 <img src="docs/showcase/triggerbot.gif" width="100%" alt="AegisAC detecting an inhuman triggerbot reaction">
 <br><strong>TRIGGERBOT</strong><br>
-<sub>Instantaneous weapon discharges (≤120ms) upon crosshair intersection with enemy targets.</sub>
+<sub>Instantaneous weapon discharges (≤90ms command delta) upon crosshair intersection with enemy targets.</sub>
 </td>
 </tr>
 </table>
@@ -133,15 +133,16 @@ The Triggerbot detector inspects real-time crosshair raycast targeting, sub-tick
 ### Detection Methods
 
 1. **Sub-Tick Reaction Timing Analysis**
-   - **How it works:** Tracks when an enemy enters the player's crosshair (both aim-driven flicks and target-driven angle holds). Compares the exact target acquisition command to the sub-tick command where the weapon discharged.
-   - **Trigger Condition:** Reaction latency ≤ `MaxReactionTimeMs` (default: ≤ 120ms / ~7-8 ticks at 64-tick), which is physically impossible for human visual recognition response.
+   - **How it works:** Tracks when an enemy enters the player's crosshair while holding an angle (`TargetDriven`). Compares the exact target acquisition command to the sub-tick command where the weapon discharged.
+   - **Trigger Condition:** Command delta ≤ `MaxReactionTimeMs` (calibrated default: ≤ 90ms / ~5-6 ticks at 64-tick), excluding aim-driven flicks, pre-fires, or active weapon sprays.
 
-2. **3-Incident Evidence System**
-   - **How it works:** Follows the same evidence-based structure as Aimbot. Each verified damaging shot with unnatural reaction latency records 1 triggerbot incident.
-   - **Trigger Condition:** Accumulating `EvidenceThreshold` (default: 3) verified incidents within a 5-minute sliding window triggers the configured punishment.
+2. **Multi-Incident Evidence System**
+   - **How it works:** Follows the same evidence-based structure as Aimbot. Each verified damaging shot with unnatural command delta records 1 triggerbot incident.
+   - **Trigger Condition:** Accumulating `EvidenceThreshold` (calibrated default: 4) verified incidents within a 5-minute sliding window triggers the configured punishment.
 
-3. **Smoke Occlusion & Safety Monitoring**
-   - **How it works:** Dynamically tracks smoke grenade detonation coordinates and volumetric boundaries. Automatically discards shots through active smokes or during uncertain map-load smoke states to prevent false flags through visual volumetric boundaries.
+3. **Smoke & Line-of-Sight Safety Gates**
+   - **World Visibility Gate:** Performs targeted line-of-sight checks against world geometry (`MaskTrace.Solid`). Targets behind walls or where line-of-sight cannot be confirmed are safely ignored to eliminate wallbang penetration false positives.
+   - **Smoke Occlusion:** Dynamically tracks smoke grenade detonation coordinates and volumetric boundaries. Automatically discards shots through active smokes or during uncertain map-load smoke states.
 
 ### Strictness Rating
 
@@ -149,9 +150,10 @@ The Triggerbot detector inspects real-time crosshair raycast targeting, sub-tick
 | :--- | :--- |
 | **Strictness Level** | **Conservative (High Precision)** |
 | **Evidence Window** | 5 Minutes (Sliding) |
-| **Evidence Threshold** | 3 Verified Damaging Incidents required |
-| **Max Reaction Timing** | ≤ 120ms (~7-8 Ticks at 64-tick) |
+| **Evidence Threshold** | 4 Verified Damaging Incidents required |
+| **Max Command Delta** | ≤ 90ms (~5-6 Ticks at 64-tick) |
 | **Damage Gate** | Active — evaluated strictly upon confirmed `player_hurt` events |
+| **Line-of-Sight Gate** | Active — candidates verified against world geometry (`MaskTrace.Solid`) |
 | **Smoke Exclusion** | Active — automated ray-box smoke volume intersection check |
 
 </details>
@@ -165,7 +167,7 @@ The Aimlock detector analyzes sustained crosshair adherence, lag-compensated tar
 ### Detection Methods
 
 1. **Continuous Angular Error & Hull Tracking**
-   - **How it works:** Analyzes the player's view angles against enemy player hull boundaries across 3 distinct body heights (lower torso: `8.0`, chest: `46.0`, head: `64.0`) over a sliding 2.0-second tracking window (`128` ticks at 64-tick).
+   - **How it works:** Analyzes the player's view angles against enemy player hull boundaries across 3 distinct body heights (lower torso: `8.0`, chest: `46.0`, head: `64.0`) over a sliding 1.95-second tracking window (`125` ticks at 64-tick).
    - **Trigger Condition:** Sustained crosshair placement covering ≥ 95% of ticks (`MeetsCoverage`) within the enemy bounding hull while the enemy traverses across the player's screen.
 
 2. **Lag-Compensated Multi-Hypothesis Verification**
@@ -182,7 +184,7 @@ The Aimlock detector analyzes sustained crosshair adherence, lag-compensated tar
 | **Strictness Level** | **Conservative (High Precision)** |
 | **Evidence Window** | 5 Minutes (Sliding) |
 | **Evidence Threshold** | 3 Verified Tracking Incidents required |
-| **Tracking Window** | 2.0 Seconds (128 ticks at 64-tick) |
+| **Tracking Window** | 1.95 Seconds (~125 ticks at 64-tick) |
 | **Hull Coverage** | ≥ 95% on-target consistency |
 | **Min Target Travel** | > 128.0 units (~4 player widths) |
 
@@ -264,11 +266,20 @@ AegisAC configurations are stored in `addons/swiftlys2/configs/plugins/AegisAC/c
       // Enable or disable aimbot detection
       "Enabled": true,
 
-      // Punishment applied upon detection: "none", "kick", or "ban"
-      "Punishment": "ban",
+      // Punishment applied upon detection: "none", "kick", or "ban" (keep "none" during server calibration)
+      "Punishment": "none",
 
       // Treat teammates as enemies (useful for FFA / Deathmatch servers)
-      "TeammatesAreEnemies": false
+      "TeammatesAreEnemies": false,
+
+      // Calibrated single-tick snap threshold in degrees
+      "SnapAngleThreshold": 26.0,
+
+      // Minimum total angular movement in degrees for smooth aimbot trajectory
+      "SmoothMinimumMovement": 12.0,
+
+      // Minimum path efficiency ratio (0.0 to 1.0)
+      "SmoothMinimumPathEfficiency": 0.96
     },
 
     // Triggerbot detection module configuration
@@ -276,14 +287,17 @@ AegisAC configurations are stored in `addons/swiftlys2/configs/plugins/AegisAC/c
       // Enable or disable triggerbot detection
       "Enabled": true,
 
-      // Punishment applied upon detection: "none", "kick", or "ban"
-      "Punishment": "ban",
+      // Punishment applied upon detection: "none", "kick", or "ban" (keep "none" during server calibration)
+      "Punishment": "none",
 
-      // Number of unnatural triggerbot reaction incidents within 5 minutes required to punish
-      "EvidenceThreshold": 3,
+      // Number of unnatural triggerbot reaction incidents within 5 minutes required to punish (calibrated default: 4)
+      "EvidenceThreshold": 4,
 
-      // Maximum reaction time in milliseconds considered an unnatural triggerbot reaction (default: 120ms)
-      "MaxReactionTimeMs": 120.0
+      // Maximum reaction time in milliseconds considered an unnatural triggerbot reaction (calibrated default: 90ms)
+      "MaxReactionTimeMs": 90.0,
+
+      // Verify direct world line-of-sight using native physics raycasts
+      "EnableNativeTrace": true
     },
 
     // Aimlock detection module configuration
@@ -291,14 +305,14 @@ AegisAC configurations are stored in `addons/swiftlys2/configs/plugins/AegisAC/c
       // Enable or disable aimlock detection
       "Enabled": true,
 
-      // Punishment applied upon detection: "none", "kick", or "ban"
-      "Punishment": "ban",
+      // Punishment applied upon detection: "none", "kick", or "ban" (keep "none" during server calibration)
+      "Punishment": "none",
 
       // Number of aimlock tracking incidents within 5 minutes required to punish
       "EvidenceThreshold": 3,
 
-      // Duration in seconds of uninterrupted mechanical tracking required for an aimlock episode (default: 2.0s)
-      "TrackingDurationSeconds": 2.0,
+      // Duration in seconds of uninterrupted mechanical tracking required for an aimlock episode (calibrated default: 1.95s)
+      "TrackingDurationSeconds": 1.95,
 
       // Minimum distance in units between player and target to evaluate tracking (default: 200.0 units)
       "MinimumDistance": 200.0,

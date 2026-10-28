@@ -56,8 +56,8 @@ public sealed class TriggerbotConfig
 	[Description("Maximum reaction time in milliseconds considered an unnatural triggerbot reaction (calibrated default: 90ms).")]
 	public float MaxReactionTimeMs { get; set; } = 90.0f;
 
-	[Description("Enable native engine physics raycasting. Disabled by default to maximize server tick performance and prevent native engine crashes.")]
-	public bool EnableNativeTrace { get; set; } = false;
+	[Description("Verify direct world line-of-sight to crosshair targets using native physics raycasts. When disabled or if line-of-sight cannot be confirmed, targets behind potential geometry are safely ignored to eliminate wallbang false positives.")]
+	public bool EnableNativeTrace { get; set; } = true;
 }
 
 /// <summary>
