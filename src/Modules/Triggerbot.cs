@@ -42,6 +42,7 @@ internal sealed class TriggerPendingAttack
 	public required int TargetIndex { get; init; }
 	public required int ReactionTicks { get; init; }
 	public required TriggerContactMode Mode { get; init; }
+	public int SyntheticAnomalies { get; init; }
 	public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
 }
 
@@ -82,6 +83,7 @@ internal sealed class TriggerPlayerState
 	public int AngleHoldingTicks;
 	public int LastFreshAttackCommand = -1;
 	public int SyntheticInputAnomalies;
+	public DateTime LastAnomalyAnnounce = DateTime.MinValue;
 	public readonly int[] LastContactTick = new int[AimbotDetector.MaxPlayers + 1];
 	public readonly List<TriggerCommand> Commands = new();
 	public readonly List<TriggerPendingAttack> Pending = new();
@@ -103,6 +105,7 @@ internal sealed class TriggerPlayerState
 		AngleHoldingTicks = 0;
 		LastFreshAttackCommand = -1;
 		SyntheticInputAnomalies = 0;
+		LastAnomalyAnnounce = DateTime.MinValue;
 		Array.Fill(LastContactTick, -1);
 		Commands.Clear();
 		Pending.Clear();
@@ -254,6 +257,14 @@ internal sealed class TriggerbotDetector
 							{
 								st.SyntheticInputAnomalies++;
 								_debug($"[Triggerbot] {Name(player)} detected impossible click cadence / synthetic input injection: {deltaCmds} ticks delta (cmd {st.LastFreshAttackCommand} -> {number}). Anomalies: {st.SyntheticInputAnomalies}.");
+
+								var now = DateTime.UtcNow;
+								if (st.SyntheticInputAnomalies >= 5 && (now - st.LastAnomalyAnnounce) >= TimeSpan.FromMinutes(2))
+								{
+									st.LastAnomalyAnnounce = now;
+									StatDetections++;
+									_announce(player, "SYNTHETIC_INPUT", $"Blizzard Overwatch state-machine anomaly: {st.SyntheticInputAnomalies} duplicate click transitions in <= 2 ticks (physically impossible mechanical debounce limit).");
+								}
 							}
 						}
 						st.LastFreshAttackCommand = number;
@@ -385,7 +396,8 @@ internal sealed class TriggerbotDetector
 					CommandNumber = commandNumber,
 					TargetIndex = targetIndex,
 					ReactionTicks = reactionTicks,
-					Mode = st.ActiveMode
+					Mode = st.ActiveMode,
+					SyntheticAnomalies = st.SyntheticInputAnomalies
 				});
 
 				while (st.Pending.Count > PendingLimit)
@@ -398,6 +410,9 @@ internal sealed class TriggerbotDetector
 			{
 				_debug($"[Triggerbot] {Name(player)} attack ignored due to smoke occlusion volume.");
 			}
+
+			// Clear ContactStartCommand so subsequent commands don't record stale reactions
+			st.ContactStartCommand = -1;
 		}
 
 		st.LastAngles = viewAngles;
@@ -462,7 +477,8 @@ internal sealed class TriggerbotDetector
 				CommandNumber = cmdNum,
 				TargetIndex = targetIndex,
 				ReactionTicks = reactionTicks,
-				Mode = st.ActiveMode
+				Mode = st.ActiveMode,
+				SyntheticAnomalies = st.SyntheticInputAnomalies
 			});
 
 			while (st.Pending.Count > PendingLimit)
@@ -511,10 +527,31 @@ internal sealed class TriggerbotDetector
 		if ((DateTime.UtcNow - pendingMatch.CreatedAt).TotalSeconds > 0.75)
 			return;
 
-		// Pure Triggerbot operates on TargetDriven mode (holding an angle and reacting to an enemy crossing crosshair).
-		// AimDriven reactions are flicks/swipes where the click is intentionally coordinated with arm movement.
-		if (pendingMatch.Mode != TriggerContactMode.TargetDriven)
+		// Triggerbot evaluation across contact modes:
+		// 1. TargetDriven (holding angle, target crosses crosshair):
+		//    Normal human visual reaction is 150-250ms (Vanguard baseline: MIN_HUMAN_REACTION = 150ms).
+		//    Flags reactions <= MaxReactionTimeMs (default: 90ms / ~5.7 ticks).
+		// 2. AimDriven (player aims/swipes onto target):
+		//    Human pre-planned motor movement clicks during/after crosshair acquisition.
+		//    To prevent false positives on legitimate flick shots while catching external triggerbots:
+		//    - Instant contact click: ReactionTicks <= 1 (<= 15.6ms delta from first contact tick; physically impossible human reaction), OR
+		//    - Synthetic input anomaly present: Overwatch reverse-engineered click cadence anomaly (deltaCmds <= 2 ticks).
+		float reactionMs = pendingMatch.ReactionTicks * (1000.0f / 64.0f);
+		bool isUnnaturalReaction;
+		if (pendingMatch.Mode == TriggerContactMode.TargetDriven)
+		{
+			isUnnaturalReaction = reactionMs <= _config.MaxReactionTimeMs;
+		}
+		else // AimDriven
+		{
+			isUnnaturalReaction = pendingMatch.ReactionTicks <= 1 || pendingMatch.SyntheticAnomalies > 0;
+		}
+
+		if (!isUnnaturalReaction)
+		{
+			_debug($"[Triggerbot] {Name(attacker)} normal human reaction: {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms, mode: {pendingMatch.Mode}) on #{victim.PlayerID}.");
 			return;
+		}
 
 		// Verify direct line-of-sight at damage resolution to reject wallbang / penetration shots
 		if (_config.EnableNativeTrace)
@@ -543,72 +580,64 @@ internal sealed class TriggerbotDetector
 			catch { }
 		}
 
-		float reactionMs = pendingMatch.ReactionTicks * (1000.0f / 64.0f);
 		var now = DateTime.UtcNow;
 		st.Incidents.RemoveAll(i => now - i.Time >= EvidenceWindow);
 
-		if (reactionMs <= _config.MaxReactionTimeMs)
+		st.Incidents.Add(new TriggerIncident
 		{
-			st.Incidents.Add(new TriggerIncident
+			Time = now,
+			ReactionTicks = pendingMatch.ReactionTicks,
+			ReactionMs = reactionMs,
+			TargetId = victim.PlayerID,
+			Weapon = normWeapon,
+			Damage = damage,
+			Mode = pendingMatch.Mode,
+			SyntheticAnomalies = pendingMatch.SyntheticAnomalies
+		});
+
+		_debug($"[Triggerbot] {Name(attacker)} unnatural command delta: {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms cmd interval, mode: {pendingMatch.Mode}) on #{victim.PlayerID} dealing {damage} dmg. Evidence: {st.Incidents.Count}/{_config.EvidenceThreshold}.");
+
+		if (st.Incidents.Count >= _config.EvidenceThreshold)
+		{
+			StatDetections++;
+
+			// Vanguard MACRO_TRESHOLD / MIN_CLICK_VARIANCE verification:
+			// Real human reaction cadence exhibits biological variance (>0.05).
+			// Mechanical triggerbots and auto-clickers execute with near-zero timing variance (<0.01).
+			float meanTicks = 0.0f;
+			for (int i = 0; i < st.Incidents.Count; i++)
+				meanTicks += st.Incidents[i].ReactionTicks;
+			meanTicks /= st.Incidents.Count;
+
+			float varianceTicks = 0.0f;
+			for (int i = 0; i < st.Incidents.Count; i++)
 			{
-				Time = now,
-				ReactionTicks = pendingMatch.ReactionTicks,
-				ReactionMs = reactionMs,
-				TargetId = victim.PlayerID,
-				Weapon = normWeapon,
-				Damage = damage,
-				Mode = pendingMatch.Mode,
-				SyntheticAnomalies = st.SyntheticInputAnomalies
-			});
-
-			_debug($"[Triggerbot] {Name(attacker)} unnatural command delta: {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms cmd interval <= {_config.MaxReactionTimeMs:F0}ms, mode: {pendingMatch.Mode}) on #{victim.PlayerID} dealing {damage} dmg. Evidence: {st.Incidents.Count}/{_config.EvidenceThreshold}.");
-
-			if (st.Incidents.Count >= _config.EvidenceThreshold)
-			{
-				StatDetections++;
-
-				// Vanguard MACRO_TRESHOLD / MIN_CLICK_VARIANCE verification:
-				// Real human reaction cadence exhibits biological variance (>0.05).
-				// Mechanical triggerbots and auto-clickers execute with near-zero timing variance (<0.01).
-				float meanTicks = 0.0f;
-				for (int i = 0; i < st.Incidents.Count; i++)
-					meanTicks += st.Incidents[i].ReactionTicks;
-				meanTicks /= st.Incidents.Count;
-
-				float varianceTicks = 0.0f;
-				for (int i = 0; i < st.Incidents.Count; i++)
-				{
-					float diff = st.Incidents[i].ReactionTicks - meanTicks;
-					varianceTicks += diff * diff;
-				}
-				varianceTicks /= st.Incidents.Count;
-
-				var lines = new List<string>();
-				for (int i = 0; i < st.Incidents.Count; i++)
-				{
-					var inc = st.Incidents[i];
-					lines.Add($"{i + 1}. {inc.ReactionTicks} ticks (~{inc.ReactionMs:F1}ms cmd interval) - {inc.Mode} ({inc.Weapon}, {inc.Damage} dmg)");
-				}
-
-				string macroTag = varianceTicks < 0.05f
-					? $" (Machine-like cadence: timing variance {varianceTicks:F3} < 0.05 Vanguard benchmark)"
-					: "";
-
-				string anomalyTag = st.SyntheticInputAnomalies > 0
-					? $" (Overwatch input anomaly: {st.SyntheticInputAnomalies} impossible double-click pulses detected)"
-					: "";
-
-				string latest = $"Latest damaging shot: command-to-acquisition delta of {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms cmd interval, mode: {pendingMatch.Mode}){macroTag}{anomalyTag}. Evidence {st.Incidents.Count}/{_config.EvidenceThreshold} in 5 min.";
-
-				string evidence = string.Join("\n", lines) + "\n" + latest;
-
-				_announce(attacker, "TRIGGERBOT", evidence);
-				st.Incidents.Clear();
+				float diff = st.Incidents[i].ReactionTicks - meanTicks;
+				varianceTicks += diff * diff;
 			}
-		}
-		else
-		{
-			_debug($"[Triggerbot] {Name(attacker)} normal human reaction: {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms > {_config.MaxReactionTimeMs:F0}ms, mode: {pendingMatch.Mode}) on #{victim.PlayerID}.");
+			varianceTicks /= st.Incidents.Count;
+
+			var lines = new List<string>();
+			for (int i = 0; i < st.Incidents.Count; i++)
+			{
+				var inc = st.Incidents[i];
+				lines.Add($"{i + 1}. {inc.ReactionTicks} ticks (~{inc.ReactionMs:F1}ms cmd interval) - {inc.Mode} ({inc.Weapon}, {inc.Damage} dmg)");
+			}
+
+			string macroTag = varianceTicks < 0.05f
+				? $" (Machine-like cadence: timing variance {varianceTicks:F3} < 0.05 Vanguard benchmark)"
+				: "";
+
+			string anomalyTag = st.SyntheticInputAnomalies > 0
+				? $" (Overwatch input anomaly: {st.SyntheticInputAnomalies} impossible double-click pulses detected)"
+				: "";
+
+			string latest = $"Latest damaging shot: command-to-acquisition delta of {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms cmd interval, mode: {pendingMatch.Mode}){macroTag}{anomalyTag}. Evidence {st.Incidents.Count}/{_config.EvidenceThreshold} in 5 min.";
+
+			string evidence = string.Join("\n", lines) + "\n" + latest;
+
+			_announce(attacker, "TRIGGERBOT", evidence);
+			st.Incidents.Clear();
 		}
 	}
 
@@ -651,12 +680,21 @@ internal sealed class TriggerbotDetector
 
 			Vector origin = maybeOrigin.Value;
 
-			float dx = origin.X - eye.X;
-			float dy = origin.Y - eye.Y;
-			float dz = origin.Z - eye.Z;
+			// Exact 3D ray to vertical cylinder closest-approach calculation:
+			// Eliminates pitch / elevation projection distortion where aiming at head or from high ground missed cylinder boundaries.
+			float vxySq = forward.X * forward.X + forward.Y * forward.Y;
+			float t;
+			if (vxySq > 1e-4f)
+			{
+				t = ((origin.X - eye.X) * forward.X + (origin.Y - eye.Y) * forward.Y) / vxySq;
+			}
+			else
+			{
+				// Looking nearly straight up or straight down (+/- 90 pitch)
+				t = Math.Abs(forward.Z) > 1e-4f ? (origin.Z + 46.0f - eye.Z) / forward.Z : 0.0f;
+			}
 
-			float t = dx * forward.X + dy * forward.Y + dz * forward.Z;
-			if (t < 30.0f || t >= bestDist)
+			if (t < 20.0f || t >= bestDist)
 				continue;
 
 			float px = eye.X + forward.X * t;

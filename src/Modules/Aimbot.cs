@@ -452,11 +452,37 @@ internal sealed class AimbotDetector
 			}
 		}
 
-		if (candidateCount != 1 || matchedCandidate == null)
+		// Fallback for continuous automatic spray:
+		// In CS2 Protobuf usercmds, Attack1StartHistoryIndex is only set on the initial click frame.
+		// Subsequent bullets (2..30) of an automatic spray occur while mouse1 is continuously held (idx = -1).
+		// Correlate the weapon_fire event to the simulated command closest to currentTick.
+		if (candidateCount == 0)
 		{
-			if (matchedCandidate != null)
-				matchedCandidate.Consumed = true;
+			for (int ci = st.Commands.Count - 1; ci >= 0; ci--)
+			{
+				var c = st.Commands[ci];
+				if (c.Simulated && !c.Consumed && (long)currentTick - c.ServerTick is >= -1 and <= 1)
+				{
+					candidateCount++;
+					if (matchedCandidate == null)
+					{
+						matchedCandidate = c;
+					}
+					else if (Math.Abs(c.ServerTick - currentTick) < Math.Abs(matchedCandidate.ServerTick - currentTick))
+					{
+						matchedCandidate.Consumed = true;
+						matchedCandidate = c;
+					}
+					else
+					{
+						c.Consumed = true;
+					}
+				}
+			}
+		}
 
+		if (matchedCandidate == null)
+		{
 			StatFireNoMatch++;
 
 			AimCommand? lastShotCmd = null;
@@ -480,6 +506,7 @@ internal sealed class AimbotDetector
 
 		var command = matchedCandidate;
 		command.Consumed = true;
+		command.IsShot = true;
 
 		st.Shots.Add(new ShotRecord
 		{
