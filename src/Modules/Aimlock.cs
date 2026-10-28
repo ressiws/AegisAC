@@ -119,7 +119,7 @@ internal sealed class AimlockDetector
 	private static readonly TimeSpan EvidenceWindow = TimeSpan.FromMinutes(5);
 	private static readonly float[] BodyHeights = [8.0f, 46.0f, 64.0f]; // Feet, Chest, Head
 
-	private readonly AimlockConfig _config;
+	private AimlockConfig _config;
 	private readonly Func<int, PositionFrame?> _findFrame;
 	private readonly Func<int, IPlayer?> _getPlayer;
 	private readonly Func<int, int, bool> _areEnemies;
@@ -127,6 +127,8 @@ internal sealed class AimlockDetector
 	private readonly Action<string> _debug;
 
 	private readonly AimlockPlayerData[] _players = new AimlockPlayerData[AimbotDetector.MaxPlayers + 1];
+
+	public void UpdateConfig(AimlockConfig config) => _config = config;
 
 	public long StatEvaluations, StatTracksStarted, StatIncidents, StatDetections;
 
@@ -404,7 +406,15 @@ internal sealed class AimlockDetector
 			return;
 		}
 
-		Vector origin = pawn.AbsOrigin ?? default;
+		Vector? maybeOrigin = pawn.AbsOrigin;
+		if (!maybeOrigin.HasValue || !AimMath.IsFinite(maybeOrigin.Value))
+		{
+			st.Track.Clear();
+			st.Pending = default;
+			return;
+		}
+
+		Vector origin = maybeOrigin.Value;
 		Vector eye = pawn.EyePosition ?? new Vector(origin.X, origin.Y, origin.Z + 64.0f);
 		var cmd = st.Commands.FindLast(c => c.CommandNumber == commandNumber);
 		QAngle angles = cmd != null ? cmd.Angles : pawn.EyeAngles;

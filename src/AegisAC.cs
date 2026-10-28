@@ -101,6 +101,10 @@ public sealed class AegisAC : BasePlugin
 		{
 			_config = loaded;
 			Utils.DebugMode = _config.Debug;
+			_punishmentManager?.UpdateConfig(_config);
+			_detector?.UpdateConfig(_config.Aimbot);
+			_triggerbot?.UpdateConfig(_config.Triggerbot);
+			_aimlock?.UpdateConfig(_config.Aimlock);
 		}
 	}
 
@@ -233,6 +237,22 @@ public sealed class AegisAC : BasePlugin
 		context.Reply("[AegisAC] Configuration reloaded successfully.");
 	}
 
+	private string CurrentMapName
+	{
+		get
+		{
+			try
+			{
+				string? name = Core.Engine.GlobalVars.MapName;
+				return string.IsNullOrEmpty(name) ? "unknown" : name;
+			}
+			catch
+			{
+				return "unknown";
+			}
+		}
+	}
+
 	private void AnnounceAimbot(IPlayer player, string detection, string evidence)
 	{
 		string name = player.Controller?.PlayerName ?? $"#{player.PlayerID}";
@@ -244,6 +264,9 @@ public sealed class AegisAC : BasePlugin
 		{
 			DiscordWebhookNotifier.SendAlert(
 				_config.Discord.WebhookUrl,
+				_config.ServerId,
+				CurrentMapName,
+				CurrentTick,
 				name,
 				player.SteamID,
 				"Aimbot",
@@ -264,6 +287,9 @@ public sealed class AegisAC : BasePlugin
 		{
 			DiscordWebhookNotifier.SendAlert(
 				_config.Discord.WebhookUrl,
+				_config.ServerId,
+				CurrentMapName,
+				CurrentTick,
 				name,
 				player.SteamID,
 				"Triggerbot",
@@ -284,6 +310,9 @@ public sealed class AegisAC : BasePlugin
 		{
 			DiscordWebhookNotifier.SendAlert(
 				_config.Discord.WebhookUrl,
+				_config.ServerId,
+				CurrentMapName,
+				CurrentTick,
 				name,
 				player.SteamID,
 				"Aimlock",
