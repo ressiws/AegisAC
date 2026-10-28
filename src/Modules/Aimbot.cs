@@ -1854,8 +1854,8 @@ internal sealed class AimbotDetector
 				st.SilentAimScore);
 		}
 
-		bool isBlatant = isBlatantSnap || isBlatantLaser || matchedRule == EvidenceType.SilentAim;
-		int threshold = isBlatant ? 1 : (matchedRule == EvidenceType.SmoothConvergence ? SmoothDetectionThreshold : SnapDetectionThreshold);
+		bool isBlatant = isBlatantSnap || matchedRule == EvidenceType.SilentAim;
+		int threshold = isBlatant ? 1 : (isBlatantLaser ? 2 : (matchedRule == EvidenceType.SmoothConvergence ? SmoothDetectionThreshold : SnapDetectionThreshold));
 
 		string blatantTag = isBlatantLaser
 			? " [BLATANT LASER: zero-jitter straight trajectory]"
@@ -1880,7 +1880,7 @@ internal sealed class AimbotDetector
 			}
 
 			string latest = isBlatantLaser
-				? $"Latest damaging shot: mathematically synthetic laser trajectory (movement {largestSnap:F2}°, error {bestBefore:F2}° → {bestAfter:F2}°, zero tremor/curvature). Blatant detection: threshold 1."
+				? $"Latest damaging shot: mathematically synthetic laser trajectory (movement {largestSnap:F2}°, error {bestBefore:F2}° → {bestAfter:F2}°, zero tremor/curvature). Evidence {incidents.Count}/{threshold} in 5 min."
 				: (matchedRule switch
 				{
 					EvidenceType.SnapReturn => $"Latest damaging shot: aim jumped {largestSnap:F2}° and immediately returned. Evidence {incidents.Count}/{threshold} in 5 min.",

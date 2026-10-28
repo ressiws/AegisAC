@@ -97,9 +97,9 @@ public class TriggerbotDetectionTests
         // Execute 4 holds where attacker holds crosshair static at Yaw 0 and enemy crosses into crosshair (Y=0), firing 1 tick later
         for (int rep = 0; rep < 4; rep++)
         {
-            // Enemy off-crosshair for 6 ticks while attacker holds completely still
+            // Enemy off-crosshair for 18 ticks while attacker holds completely still (>= 250ms held angle)
             TestPlayerFactory.SetPosition(victimState, new Vector(500f, 100f, 0f));
-            for (int w = 0; w < 6; w++)
+            for (int w = 0; w < 18; w++)
             {
                 h.StepCommand(tick, attacker, tick, new QAngle(0f, 0f, 0f), isFreshAttack: false);
                 tick++;
@@ -128,8 +128,8 @@ public class TriggerbotDetectionTests
 
         int tick = 1;
         // Previously AegisAC had a complete blind spot for AimDriven external triggerbots with 2..4 ticks delay!
-        // Simulate 5 controlled peeking/micro-adjustment sweeps (1.5 deg/tick) onto the enemy, firing 2 ticks (31.2ms) after contact.
-        for (int rep = 0; rep < 5; rep++)
+        // Simulate 6 controlled peeking/micro-adjustment sweeps (1.5 deg/tick) onto the enemy, firing 2 ticks (31.2ms) after contact.
+        for (int rep = 0; rep < 6; rep++)
         {
             // Sweep toward enemy from Yaw 9.0 down to 3.0 (outside head hitbox radius ~1.03 deg at 500u)
             float[] approachYaws = [9.0f, 7.5f, 6.0f, 4.5f, 3.0f];
@@ -168,7 +168,7 @@ public class TriggerbotDetectionTests
         for (int rep = 0; rep < 5; rep++)
         {
             TestPlayerFactory.SetPosition(victimState, new Vector(500f, 100f, 0f));
-            for (int w = 0; w < 6; w++)
+            for (int w = 0; w < 18; w++)
             {
                 h.StepCommand(tick, attacker, tick, new QAngle(0f, 0f, 0f), isFreshAttack: false);
                 tick++;
@@ -324,5 +324,42 @@ public class TriggerbotDetectionTests
         // Crouched target (top Z = 54) is NOT hit by horizontal ray at Z = 64
         bool hitsCrouched = TriggerbotDetector.IntersectsAnatomicalHitbox(rayStart, rayDir, targetOrigin, crouched: true, 4096f, out _, out _);
         Assert.False(hitsCrouched);
+    }
+
+    [Fact]
+    public void LegitimatePlayerNormalAimAndShortPauses_NeverFalseFlagsTriggerbot()
+    {
+        var h = new TriggerbotTestHarness();
+        var (attacker, _) = h.AddPlayer(1, team: 2, origin: new Vector(0f, 0f, 0f));
+        var (victim, victimState) = h.AddPlayer(2, team: 3, origin: new Vector(500f, 0f, 0f));
+
+        int tick = 1;
+        // Simulates the exact live server scenario:
+        // A human player micro-aims or counter-strafes (pausing < 16 ticks) and clicks when landing on enemy.
+        // With organic timing variation (delays of 1, 3, 2, 4, 1, 5 ticks), AimDriven must NOT award points
+        // and TargetDriven requires >= 16 ticks hold, completely preventing false positives!
+        int[] naturalDelays = [1, 3, 2, 4, 1, 5, 2];
+        foreach (int delay in naturalDelays)
+        {
+            // Attacker sweeps crosshair from outside toward enemy
+            for (int i = 0; i < 5; i++)
+            {
+                h.StepCommand(tick, attacker, tick, new QAngle(0f, 6.0f - i * 1.0f, 0f), isFreshAttack: false);
+                tick++;
+            }
+
+            // Crosshair enters enemy hitbox
+            for (int d = 0; d < delay; d++)
+            {
+                h.StepCommand(tick, attacker, tick, new QAngle(0f, 0.5f, 0f), isFreshAttack: false);
+                tick++;
+            }
+
+            // Player fires
+            h.StepCommand(tick, attacker, tick, new QAngle(0f, 0.0f, 0f), isFreshAttack: true, hurtVictim: victim);
+            tick += 10;
+        }
+
+        Assert.Empty(h.Detections);
     }
 }

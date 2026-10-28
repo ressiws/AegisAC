@@ -134,6 +134,7 @@ internal sealed class TriggerbotDetector
 	private const int HistoryLimit = 30;
 	private const int PendingLimit = 8;
 	private const int FreshContactTicks = 5; // ~78ms edge-jitter guard at 64-tick
+	private const int HeldAngleMinimumTicks = 16; // >= 250ms sustained angle hold required for TargetDriven mode (CS2AC Legacy)
 	private const float HeldAngleMaximumDegrees = 0.65f;
 	private const float TraceLength = 8192.0f;
 	private const float SmokeHalfExtent = 320.0f;
@@ -338,7 +339,7 @@ internal sealed class TriggerbotDetector
 				break;
 		}
 
-		if (!AimMath.IsFinite(angles) || angles.X < -89.05f || angles.X > 89.05f || MathF.Abs(angles.Z) > 1.0f)
+		if (!AimMath.IsFinite(angles) || angles.X < -89.5f || angles.X > 89.5f || MathF.Abs(angles.Z) > 50.0f)
 			return;
 
 		DateTime now = nowOverride ?? DateTime.UtcNow;
@@ -471,7 +472,7 @@ internal sealed class TriggerbotDetector
 					st.AcquisitionSpeedDegPerTick = aimMovement;
 					st.ContactAccumulatedSpeed = aimMovement;
 					st.ContactTickCount = 1;
-					st.ActiveMode = st.AngleHoldingTicks >= 2 && aimMovement <= HeldAngleMaximumDegrees
+					st.ActiveMode = st.AngleHoldingTicks >= HeldAngleMinimumTicks && aimMovement <= HeldAngleMaximumDegrees
 						? TriggerContactMode.TargetDriven
 						: TriggerContactMode.AimDriven;
 
@@ -811,6 +812,7 @@ internal sealed class TriggerbotDetector
 
 		if (attack.Mode == TriggerContactMode.TargetDriven)
 		{
+			// TargetDriven: player held crosshair motionless for >= 250ms waiting for an enemy to cross it.
 			if (rt <= 1)
 				return (lowVarianceConsistency ? 3.5f : 3.0f) + macroBonus;
 			if (rt <= 3)
@@ -820,38 +822,29 @@ internal sealed class TriggerbotDetector
 			if (rt <= AimMath.Baselines.MinHumanReactionTicks && lowVarianceConsistency)
 				return 2.0f + macroBonus;
 			if (rt >= AimMath.Baselines.MinHumanReactionTicks)
-				return -3.0f; // Normal human reaction (>= 150ms floor) decays score
-			return -1.0f;
+				return -3.5f; // Normal human reaction (>= 150ms floor) quickly decays score
+			return -1.5f;
 		}
 		else // AimDriven (moving crosshair, peeking, micro-adjusting)
 		{
-			// Distinguish high-speed ballistic flicks from controlled aim / external triggerbots
-			bool isFastBallisticFlick = attack.AcquisitionSpeedDegPerTick > 8.5f && attack.FireSpeedDegPerTick > 4.5f;
-
-			if (rt <= 1)
+			// When moving crosshair onto an enemy, human players naturally click as the crosshair touches the hitbox.
+			// This generates short contact dwell times (0-2 ticks) during normal aim.
+			// AimDriven MUST NOT award positive points unless robotic low timing variance is mathematically proven!
+			if (!lowVarianceConsistency && !isMacroVariance)
 			{
-				if (!isFastBallisticFlick)
-					return (lowVarianceConsistency ? 3.0f : 2.5f) + macroBonus;
-				return lowVarianceConsistency ? 2.0f + macroBonus : 0.0f;
-			}
-
-			if (rt <= maxUnnaturalTicks)
-			{
-				// External triggerbots with 2-5 ticks (31-78ms) pipeline/humanizer delay during normal mouse movement:
-				// If the crosshair dwelled on or tracked the target (controlled speed) or exhibits low timing variance, score it!
-				bool controlledTrackingOrPeek = attack.MeanContactSpeedDegPerTick <= 5.0f && attack.FireSpeedDegPerTick <= 4.0f;
-				if (lowVarianceConsistency)
-					return 2.5f + macroBonus;
-				if (controlledTrackingOrPeek)
-					return 2.0f;
+				if (rt >= 7)
+					return -2.5f; // Normal human reaction decays score
 				return 0.0f;
 			}
 
-			if (rt <= AimMath.Baselines.MinHumanReactionTicks && lowVarianceConsistency)
-				return 2.0f + macroBonus;
-
+			if (rt <= 1)
+				return 4.0f + macroBonus;
+			if (rt <= maxUnnaturalTicks)
+				return 3.5f + macroBonus;
+			if (rt <= AimMath.Baselines.MinHumanReactionTicks)
+				return 2.5f + macroBonus;
 			if (rt >= 7)
-				return -2.5f; // Normal reaction decays score
+				return -2.5f;
 
 			return 0.0f;
 		}

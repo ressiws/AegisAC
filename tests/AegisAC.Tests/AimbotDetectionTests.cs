@@ -133,32 +133,35 @@ public class AimbotDetectionTests
     }
 
     [Fact]
-    public void BlatantLaserSmoothTrajectory_TriggersImmediateDetectionAtThresholdOne()
+    public void BlatantLaserSmoothTrajectory_TriggersDetectionAtThresholdTwo()
     {
         var h = new AimbotTestHarness();
         var (attacker, _) = h.AddPlayer(1, team: 2, origin: new Vector(0f, 0f, 0f));
         var (victim, _) = h.AddPlayer(2, team: 3, origin: new Vector(500f, 0f, 0f));
 
         int tick = 1;
-        // 5 ticks of unrelated camera motion moving away earlier in the 0.5s window (tests backward-anchored window isolation)
-        for (int i = 0; i < 5; i++)
-        {
-            h.StepTick(tick, attacker, tick, new QAngle(2.0f, 19.0f + i * 1.0f, 0f));
-            tick++;
-        }
-
-        // 8-step perfectly linear 24-degree laser trajectory (3.0 deg/tick, zero jitter, 100% path efficiency)
         float[] yaws = [24f, 21f, 18f, 15f, 12f, 9f, 6f, 3f, 0f];
-        for (int i = 0; i < yaws.Length; i++)
-        {
-            bool isShot = i == yaws.Length - 1;
-            QAngle ang = new(0f, yaws[i], 0f);
-            h.StepTick(tick, attacker, tick, ang, isShot ? ang : null, fireWeapon: isShot, hurtVictim: isShot ? victim : null);
-            tick++;
-        }
 
-        // Advance 1 follow-through tick so Evaluate inspects next command and confirms SmoothConvergence
-        h.StepTick(tick, attacker, tick, new QAngle(0f, 0f, 0f));
+        // Laser trajectory requires threshold = 2 (safe against 1-in-a-million pro player flick anomalies)
+        for (int rep = 0; rep < 2; rep++)
+        {
+            for (int i = 0; i < 5; i++)
+            {
+                h.StepTick(tick, attacker, tick, new QAngle(2.0f, 19.0f + i * 1.0f, 0f));
+                tick++;
+            }
+
+            for (int i = 0; i < yaws.Length; i++)
+            {
+                bool isShot = i == yaws.Length - 1;
+                QAngle ang = new(0f, yaws[i], 0f);
+                h.StepTick(tick, attacker, tick, ang, isShot ? ang : null, fireWeapon: isShot, hurtVictim: isShot ? victim : null);
+                tick++;
+            }
+
+            h.StepTick(tick, attacker, tick, new QAngle(0f, 0f, 0f));
+            tick += 5;
+        }
 
         Assert.Single(h.Detections);
         Assert.Equal("AIMBOT", h.Detections[0].Module);
@@ -355,20 +358,25 @@ public class AimbotDetectionTests
         // With multi-hypothesis lag compensation, detector reconstructs the 7-tick lag-compensated position at Y = 0!
         float[] laserYaws = [24f, 21f, 18f, 15f, 12f, 9f, 6f, 3f, 0f];
 
-        for (int t = 1; t <= 20; t++)
+        for (int rep = 0; rep < 2; rep++)
         {
-            float victimY = (t - 13) * 20.0f;
-            TestPlayerFactory.SetPosition(victimState, new Vector(500f, victimY, 0f));
+            int baseT = rep * 30;
+            for (int t = 1; t <= 20; t++)
+            {
+                int currentT = baseT + t;
+                float victimY = (t - 13) * 20.0f;
+                TestPlayerFactory.SetPosition(victimState, new Vector(500f, victimY, 0f));
 
-            int laserIdx = t - (20 - (laserYaws.Length - 1));
-            float yaw = laserIdx >= 0 ? laserYaws[laserIdx] : 24f;
-            bool isShot = t == 20;
-            QAngle ang = new(0f, yaw, 0f);
+                int laserIdx = t - (20 - (laserYaws.Length - 1));
+                float yaw = laserIdx >= 0 ? laserYaws[laserIdx] : 24f;
+                bool isShot = t == 20;
+                QAngle ang = new(0f, yaw, 0f);
 
-            h.StepTick(t, attacker, t, ang, isShot ? ang : null, fireWeapon: isShot, hurtVictim: isShot ? victim : null);
+                h.StepTick(currentT, attacker, currentT, ang, isShot ? ang : null, fireWeapon: isShot, hurtVictim: isShot ? victim : null);
+            }
+
+            h.StepTick(baseT + 21, attacker, baseT + 21, new QAngle(0f, 0f, 0f));
         }
-
-        h.StepTick(21, attacker, 21, new QAngle(0f, 0f, 0f));
 
         Assert.Single(h.Detections);
         Assert.Equal("AIMBOT", h.Detections[0].Module);
