@@ -668,6 +668,8 @@ internal sealed class AimbotDetector
 		bool reusedSnap = false;
 		var matchedRule = EvidenceType.Convergence;
 		bool ruleMatched = false;
+		bool isBlatantSnap = false;
+		bool isBlatantLaser = false;
 
 		int smoothBodyPoint = 0;
 		float smoothShotError = 180.0f;
@@ -757,6 +759,9 @@ internal sealed class AimbotDetector
 				suspicious = true;
 				matchedRule = EvidenceType.Convergence;
 				ruleMatched = true;
+				if (isBlatantRageSnap)
+					isBlatantSnap = true;
+
 				if (snap > largestSnap)
 				{
 					largestSnap = snap;
@@ -845,7 +850,15 @@ internal sealed class AimbotDetector
 
 			float improvement = smoothBefore > AimMath.Epsilon ? 1.0f - smoothAfter / smoothBefore : 0.0f;
 			bool fresh = !st.HasCountedIncident || shot.CommandNumber > st.LastCountedIncidentCommand;
-			if (fresh && MeetsSmoothThresholds(smoothMovement, improvement, smoothAfter, efficiency, steps, shrinking))
+
+			// Instant Blatant Laser Trajectory detection:
+			// If path efficiency is >= 99.0% (zero jitter / straight angular laser),
+			// movement >= 20.0° across >= 6 steps (>= 93ms) and terminates directly on target (<= 1.0° error),
+			// this is mathematically impossible for human hands (biomechanical arc + 8-12Hz physiological tremor)
+			// and triggers an immediate high-confidence detection (threshold 1).
+			bool isBlatantLaserTrajectory = efficiency >= 0.99f && smoothMovement >= 20.0f && steps >= 6 && smoothAfter <= SmoothMaximumFinalError;
+
+			if (fresh && (MeetsSmoothThresholds(smoothMovement, improvement, smoothAfter, efficiency, steps, shrinking) || isBlatantLaserTrajectory))
 			{
 				suspicious = true;
 				matchedRule = EvidenceType.SmoothConvergence;
@@ -853,6 +866,8 @@ internal sealed class AimbotDetector
 				largestSnap = smoothMovement;
 				bestBefore = smoothBefore;
 				bestAfter = smoothAfter;
+				if (isBlatantLaserTrajectory)
+					isBlatantLaser = true;
 			}
 			else
 			{
@@ -886,9 +901,15 @@ internal sealed class AimbotDetector
 
 		var incidents = matchedRule == EvidenceType.SmoothConvergence ? st.SmoothEvidence : st.SnapEvidence;
 		incidents.Add(new AimbotIncident(now, matchedRule, largestSnap, bestBefore, bestAfter));
-		int threshold = matchedRule == EvidenceType.SmoothConvergence ? SmoothDetectionThreshold : SnapDetectionThreshold;
 
-		_debug($"{Name(attacker)} counted {matchedRule} {largestSnap:F2}°, error {bestBefore:F2} -> {bestAfter:F2}, evidence {incidents.Count}/{threshold}.");
+		bool isBlatant = isBlatantSnap || isBlatantLaser;
+		int threshold = isBlatant ? 1 : (matchedRule == EvidenceType.SmoothConvergence ? SmoothDetectionThreshold : SnapDetectionThreshold);
+
+		string blatantTag = isBlatantLaser
+			? " [BLATANT LASER: zero-jitter straight trajectory]"
+			: (isBlatantSnap ? " [BLATANT SNAP: >= 90° in <= 1 tick]" : "");
+
+		_debug($"{Name(attacker)} counted {matchedRule}{blatantTag} {largestSnap:F2}°, error {bestBefore:F2} -> {bestAfter:F2}, evidence {incidents.Count}/{threshold}.");
 
 		if (incidents.Count >= threshold)
 		{
@@ -904,12 +925,14 @@ internal sealed class AimbotDetector
 				});
 			}
 
-			string latest = matchedRule switch
-			{
-				EvidenceType.SnapReturn => $"Latest damaging shot: aim jumped {largestSnap:F2}° and immediately returned. Evidence {incidents.Count}/{threshold} in 5 min.",
-				EvidenceType.SmoothConvergence => $"Latest damaging shot: unusually clean {largestSnap:F2}° curve, enemy distance {bestBefore:F2}° → {bestAfter:F2}°. Evidence {incidents.Count}/{threshold} in 5 min.",
-				_ => $"Latest damaging shot: aim moved {largestSnap:F2}° in one step, enemy distance {bestBefore:F2}° → {bestAfter:F2}°. Evidence {incidents.Count}/{threshold} in 5 min.",
-			};
+			string latest = isBlatantLaser
+				? $"Latest damaging shot: mathematically synthetic laser trajectory (movement {largestSnap:F2}°, error {bestBefore:F2}° → {bestAfter:F2}°, zero tremor/curvature). Blatant detection: threshold 1."
+				: (matchedRule switch
+				{
+					EvidenceType.SnapReturn => $"Latest damaging shot: aim jumped {largestSnap:F2}° and immediately returned. Evidence {incidents.Count}/{threshold} in 5 min.",
+					EvidenceType.SmoothConvergence => $"Latest damaging shot: unusually clean {largestSnap:F2}° curve, enemy distance {bestBefore:F2}° → {bestAfter:F2}°. Evidence {incidents.Count}/{threshold} in 5 min.",
+					_ => $"Latest damaging shot: aim moved {largestSnap:F2}° in one step, enemy distance {bestBefore:F2}° → {bestAfter:F2}°. Evidence {incidents.Count}/{threshold} in 5 min.",
+				});
 
 			StatDetections++;
 			_announce(attacker, "AIMBOT", string.Join("\n", lines) + "\n" + latest);
