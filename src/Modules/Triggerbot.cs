@@ -54,6 +54,7 @@ internal sealed class TriggerIncident
 	public required string Weapon { get; init; }
 	public required int Damage { get; init; }
 	public required TriggerContactMode Mode { get; init; }
+	public int SyntheticAnomalies { get; init; }
 }
 
 internal sealed class TriggerSmoke
@@ -79,6 +80,8 @@ internal sealed class TriggerPlayerState
 	public bool LastAnglesValid;
 	public bool WasAttacking;
 	public int AngleHoldingTicks;
+	public int LastFreshAttackCommand = -1;
+	public int SyntheticInputAnomalies;
 	public readonly int[] LastContactTick = new int[AimbotDetector.MaxPlayers + 1];
 	public readonly List<TriggerCommand> Commands = new();
 	public readonly List<TriggerPendingAttack> Pending = new();
@@ -98,6 +101,8 @@ internal sealed class TriggerPlayerState
 		LastAnglesValid = false;
 		WasAttacking = false;
 		AngleHoldingTicks = 0;
+		LastFreshAttackCommand = -1;
+		SyntheticInputAnomalies = 0;
 		Array.Fill(LastContactTick, -1);
 		Commands.Clear();
 		Pending.Clear();
@@ -238,6 +243,20 @@ internal sealed class TriggerbotDetector
 					{
 						angles = shotAngles;
 						isFreshAttack = true;
+
+						// Overwatch reverse-engineered input state machine check:
+						// Real physical mouse switches and human hands cannot perform two complete click cycles in <= 2 ticks (<= 31.2ms).
+						// External triggerbots, macro scripts, or injected SendInput calls pulse duplicate Down events or rapid synthetic pulses without physical dwell time.
+						if (st.LastFreshAttackCommand >= 0)
+						{
+							int deltaCmds = number - st.LastFreshAttackCommand;
+							if (deltaCmds is >= 1 and <= 2)
+							{
+								st.SyntheticInputAnomalies++;
+								_debug($"[Triggerbot] {Name(player)} detected impossible click cadence / synthetic input injection: {deltaCmds} ticks delta (cmd {st.LastFreshAttackCommand} -> {number}). Anomalies: {st.SyntheticInputAnomalies}.");
+							}
+						}
+						st.LastFreshAttackCommand = number;
 					}
 				}
 			}
@@ -538,7 +557,8 @@ internal sealed class TriggerbotDetector
 				TargetId = victim.PlayerID,
 				Weapon = normWeapon,
 				Damage = damage,
-				Mode = pendingMatch.Mode
+				Mode = pendingMatch.Mode,
+				SyntheticAnomalies = st.SyntheticInputAnomalies
 			});
 
 			_debug($"[Triggerbot] {Name(attacker)} unnatural command delta: {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms cmd interval <= {_config.MaxReactionTimeMs:F0}ms, mode: {pendingMatch.Mode}) on #{victim.PlayerID} dealing {damage} dmg. Evidence: {st.Incidents.Count}/{_config.EvidenceThreshold}.");
@@ -574,7 +594,11 @@ internal sealed class TriggerbotDetector
 					? $" (Machine-like cadence: timing variance {varianceTicks:F3} < 0.05 Vanguard benchmark)"
 					: "";
 
-				string latest = $"Latest damaging shot: command-to-acquisition delta of {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms cmd interval, mode: {pendingMatch.Mode}){macroTag}. Evidence {st.Incidents.Count}/{_config.EvidenceThreshold} in 5 min.";
+				string anomalyTag = st.SyntheticInputAnomalies > 0
+					? $" (Overwatch input anomaly: {st.SyntheticInputAnomalies} impossible double-click pulses detected)"
+					: "";
+
+				string latest = $"Latest damaging shot: command-to-acquisition delta of {pendingMatch.ReactionTicks} ticks (~{reactionMs:F1}ms cmd interval, mode: {pendingMatch.Mode}){macroTag}{anomalyTag}. Evidence {st.Incidents.Count}/{_config.EvidenceThreshold} in 5 min.";
 
 				string evidence = string.Join("\n", lines) + "\n" + latest;
 
