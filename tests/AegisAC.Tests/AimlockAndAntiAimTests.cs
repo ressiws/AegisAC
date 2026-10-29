@@ -357,6 +357,47 @@ public class AimlockAndAntiAimTests
     }
 
     [Fact]
+    public void Movement_AutoBunnyhoppingConvarActive_AutoDisablesBhopCheck()
+    {
+        var alerts = new List<(string Mode, string Details)>();
+        var movConfig = new MovementConfig
+        {
+            Enabled = true,
+            AutoDisableOnAutoBunnyhoppingConvar = true,
+            BhopStreakThreshold = 5
+        };
+
+        bool svAutoBhopActive = true;
+        var movement = new MovementDetector(
+            null,
+            null,
+            movConfig,
+            null,
+            (_, mode, details, _) => alerts.Add((mode, details)),
+            () => svAutoBhopActive);
+
+        // 1. When sv_autobunnyhopping is ACTIVE (e.g. surf, kz, or bhop server), 20 consecutive hops must NEVER flag
+        for (int hop = 0; hop < 20; hop++)
+        {
+            for (int air = 0; air < 5; air++)
+                movement.RecordBhopStep(1, null, "AutoBhopper", isAirborne: true);
+            movement.RecordBhopStep(1, null, "AutoBhopper", isAirborne: false, jumpedOnLandingTick: true);
+        }
+        Assert.Empty(alerts);
+
+        // 2. When sv_autobunnyhopping is DEACTIVATED (normal competitive/retakes), 5 consecutive hops trigger detection
+        svAutoBhopActive = false;
+        for (int hop = 0; hop < 5; hop++)
+        {
+            for (int air = 0; air < 5; air++)
+                movement.RecordBhopStep(1, null, "AutoBhopper", isAirborne: true);
+            movement.RecordBhopStep(1, null, "AutoBhopper", isAirborne: false, jumpedOnLandingTick: true);
+        }
+        Assert.Single(alerts);
+        Assert.Contains("Bhop", alerts[0].Mode);
+    }
+
+    [Fact]
     public void AntiAim_ContinuousSpinbotAndYawJitter_DetectedWhileCombatFlicksIgnored()
     {
         var alerts = new List<(string Mode, string Details)>();

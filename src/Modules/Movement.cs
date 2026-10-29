@@ -82,6 +82,7 @@ internal sealed class MovementDetector
     private MovementConfig _config;
     private readonly NetworkSafetyMonitor? _networkSafety;
     private readonly Action<IPlayer?, string, string, PunishmentType>? _onViolation;
+    private readonly Func<bool>? _isAutoBunnyhoppingActive;
     private readonly PlayerMovementState[] _players = new PlayerMovementState[MaxPlayers + 1];
 
     public long StatBhopDetections { get; private set; }
@@ -93,13 +94,15 @@ internal sealed class MovementDetector
         ILogger? logger,
         MovementConfig config,
         NetworkSafetyMonitor? networkSafety = null,
-        Action<IPlayer?, string, string, PunishmentType>? onViolation = null)
+        Action<IPlayer?, string, string, PunishmentType>? onViolation = null,
+        Func<bool>? isAutoBunnyhoppingActive = null)
     {
         _core = core;
         _logger = logger;
         _config = config;
         _networkSafety = networkSafety;
         _onViolation = onViolation;
+        _isAutoBunnyhoppingActive = isAutoBunnyhoppingActive;
 
         for (int i = 0; i <= MaxPlayers; i++)
         {
@@ -197,13 +200,40 @@ internal sealed class MovementDetector
     /// Tracks airborne ticks and frame-perfect bunnyhop landing chains (&gt;= 10 consecutive frame-perfect jumps).
     /// Ported from CS2AC Legacy bhop.cpp.
     /// </summary>
+    internal bool IsAutoBunnyhoppingEnabled()
+    {
+        if (!_config.AutoDisableOnAutoBunnyhoppingConvar)
+            return false;
+
+        if (_isAutoBunnyhoppingActive != null)
+            return _isAutoBunnyhoppingActive();
+
+        if (_core != null)
+        {
+            try
+            {
+                if (_core.ConVar.Find<bool>("sv_autobunnyhopping")?.Value == true)
+                    return true;
+            }
+            catch { }
+        }
+
+        return false;
+    }
+
     internal bool RecordBhopStep(int slot, IPlayer? player, string playerName, bool isAirborne, bool jumpedOnLandingTick = false)
     {
         if (slot < 0 || slot > MaxPlayers || !_config.Enabled || !_config.EnableBhopCheck)
             return false;
 
-        int bhopThreshold = Math.Max(3, _config.BhopStreakThreshold);
         var state = _players[slot];
+        if (IsAutoBunnyhoppingEnabled())
+        {
+            state.ConsecutivePerfBhops = 0;
+            return false;
+        }
+
+        int bhopThreshold = Math.Max(3, _config.BhopStreakThreshold);
         if (isAirborne)
         {
             state.AirTicks++;

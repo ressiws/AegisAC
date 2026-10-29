@@ -177,6 +177,9 @@ public sealed class MovementConfig
 	[Description("Enable frame-perfect bunnyhop landing chain detection.")]
 	public bool EnableBhopCheck { get; set; } = true;
 
+	[Description("Automatically disable Bhop detection when the server has sv_autobunnyhopping 1 active.")]
+	public bool AutoDisableOnAutoBunnyhoppingConvar { get; set; } = true;
+
 	[Description("Consecutive frame-perfect bunnyhop landings required to flag Bhop automation (default: 10).")]
 	public int BhopStreakThreshold { get; set; } = 10;
 

@@ -110,6 +110,17 @@ public sealed class AegisAC : BasePlugin
 			{
 				if (player != null)
 					AnnounceMovement(player, detection, details);
+			},
+			() =>
+			{
+				try
+				{
+					return Core.ConVar.Find<bool>("sv_autobunnyhopping")?.Value == true;
+				}
+				catch
+				{
+					return false;
+				}
 			});
 
 		_exploits = new ExploitsDetector(
