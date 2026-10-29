@@ -106,9 +106,7 @@ internal sealed class NetworkSafetyMonitor
 			|| incomingLoss >= MaximumLoss
 			|| outgoingLoss >= MaximumLoss
 			|| incomingChoke >= MaximumChoke
-			|| outgoingChoke >= MaximumChoke
-			|| commandBursts >= 2
-			|| unavailableSamples > 0;
+			|| outgoingChoke >= MaximumChoke;
 	}
 
 	public void Reset()

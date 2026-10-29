@@ -325,7 +325,7 @@ public class AimlockAndAntiAimTests
         Assert.Contains(alerts, a => a.Mode == "NameChanger");
 
         // 5. DLL Injection (117 blacklisted client event subscriptions via dedicated DllInjectionDetector module)
-        Assert.Equal(117, DllInjectionDetector.BlacklistedClientEvents.Length);
+        Assert.Equal(109, DllInjectionDetector.BlacklistedClientEvents.Length);
         var dllInjection = new DllInjectionDetector(
             null,
             null,

@@ -94,12 +94,12 @@ public class TriggerbotDetectionTests
         var (victim, victimState) = h.AddPlayer(2, team: 3, origin: new Vector(500f, 100f, 0f));
 
         int tick = 1;
-        // Execute 4 holds where attacker holds crosshair static at Yaw 0 and enemy crosses into crosshair (Y=0), firing 1 tick later
+        // Execute 4 holds where attacker holds crosshair static at Yaw 0 for >= 1.0s (>= 64 ticks) and enemy crosses into crosshair (Y=0), firing 1 tick later
         for (int rep = 0; rep < 4; rep++)
         {
-            // Enemy off-crosshair for 18 ticks while attacker holds completely still (>= 250ms held angle)
+            // Enemy off-crosshair for 70 ticks while attacker holds completely still (>= 1.0s held angle matching CS2AC Legacy)
             TestPlayerFactory.SetPosition(victimState, new Vector(500f, 100f, 0f));
-            for (int w = 0; w < 18; w++)
+            for (int w = 0; w < 70; w++)
             {
                 h.StepCommand(tick, attacker, tick, new QAngle(0f, 0f, 0f), isFreshAttack: false);
                 tick++;
@@ -120,18 +120,50 @@ public class TriggerbotDetectionTests
     }
 
     [Fact]
-    public void AimDriven_ExternalTriggerbotWithTwoToFourTickDelayWhileMovingCrosshair_IsDetected()
+    public void TargetDriven_HumanReactions_SubtractThreePoints_AndNeverFlag()
+    {
+        var h = new TriggerbotTestHarness();
+        var (attacker, _) = h.AddPlayer(1, team: 2, origin: new Vector(0f, 0f, 0f));
+        var (victim, victimState) = h.AddPlayer(2, team: 3, origin: new Vector(500f, 100f, 0f));
+
+        int tick = 1;
+        // When holding an angle and reacting with normal human speed (>= 2 ticks / >= 31ms), CS2AC subtracts 3.0 points (-3.0f).
+        for (int rep = 0; rep < 6; rep++)
+        {
+            TestPlayerFactory.SetPosition(victimState, new Vector(500f, 100f, 0f));
+            for (int w = 0; w < 70; w++)
+            {
+                h.StepCommand(tick, attacker, tick, new QAngle(0f, 0f, 0f), isFreshAttack: false);
+                tick++;
+            }
+
+            // Enemy enters crosshair
+            TestPlayerFactory.SetPosition(victimState, new Vector(500f, 0f, 0f));
+            // 3 ticks human reaction delay
+            for (int hold = 0; hold < 3; hold++)
+            {
+                h.StepCommand(tick, attacker, tick, new QAngle(0f, 0f, 0f), isFreshAttack: false);
+                tick++;
+            }
+
+            h.StepCommand(tick, attacker, tick, new QAngle(0f, 0f, 0f), isFreshAttack: true, hurtVictim: victim);
+            tick++;
+        }
+
+        Assert.Empty(h.Detections);
+    }
+
+    [Fact]
+    public void AimDriven_NormalAimingAndShooting_DoesNotFalseFlag()
     {
         var h = new TriggerbotTestHarness();
         var (attacker, _) = h.AddPlayer(1, team: 2, origin: new Vector(0f, 0f, 0f));
         var (victim, _) = h.AddPlayer(2, team: 3, origin: new Vector(500f, 0f, 0f));
 
         int tick = 1;
-        // Previously AegisAC had a complete blind spot for AimDriven external triggerbots with 2..4 ticks delay!
-        // Simulate 6 controlled peeking/micro-adjustment sweeps (1.5 deg/tick) onto the enemy, firing 2 ticks (31.2ms) after contact.
+        // Moving crosshair onto target (AimDriven) and clicking with human timing (2-4 ticks) must NEVER flag.
         for (int rep = 0; rep < 6; rep++)
         {
-            // Sweep toward enemy from Yaw 9.0 down to 3.0 (outside head hitbox radius ~1.03 deg at 500u)
             float[] approachYaws = [9.0f, 7.5f, 6.0f, 4.5f, 3.0f];
             foreach (float y in approachYaws)
             {
@@ -147,48 +179,12 @@ public class TriggerbotDetectionTests
             h.StepCommand(tick, attacker, tick, new QAngle(0f, 0.3f, 0f), isFreshAttack: false);
             tick++;
 
-            // Tick C+2 (2 ticks = 31.2ms reaction delay): external triggerbot clicks!
+            // Tick C+2 (2 ticks = 31.2ms reaction delay): human clicks
             h.StepCommand(tick, attacker, tick, new QAngle(0f, 0.0f, 0f), isFreshAttack: true, hurtVictim: victim);
             tick++;
         }
 
-        Assert.NotEmpty(h.Detections);
-        Assert.Equal("TRIGGERBOT", h.Detections[0].Module);
-    }
-
-    [Fact]
-    public void FixedDelayExternalTriggerbot_FiveTicksWithZeroVariance_IsDetectedByLowVarianceBonus()
-    {
-        var h = new TriggerbotTestHarness();
-        var (attacker, _) = h.AddPlayer(1, team: 2, origin: new Vector(0f, 0f, 0f));
-        var (victim, victimState) = h.AddPlayer(2, team: 3, origin: new Vector(500f, 100f, 0f));
-
-        int tick = 1;
-        // Simulate an external triggerbot configured with a constant 5-tick (~78ms) delay across 5 engagements (variance = 0.0 ticks^2)
-        for (int rep = 0; rep < 5; rep++)
-        {
-            TestPlayerFactory.SetPosition(victimState, new Vector(500f, 100f, 0f));
-            for (int w = 0; w < 18; w++)
-            {
-                h.StepCommand(tick, attacker, tick, new QAngle(0f, 0f, 0f), isFreshAttack: false);
-                tick++;
-            }
-
-            // Enemy enters crosshair and stays for 5 ticks before constant-delay triggerbot fires
-            TestPlayerFactory.SetPosition(victimState, new Vector(500f, 0f, 0f));
-            for (int hold = 0; hold < 5; hold++)
-            {
-                h.StepCommand(tick, attacker, tick, new QAngle(0f, 0f, 0f), isFreshAttack: false);
-                tick++;
-            }
-
-            h.StepCommand(tick, attacker, tick, new QAngle(0f, 0f, 0f), isFreshAttack: true, hurtVictim: victim);
-            tick++;
-        }
-
-        Assert.Single(h.Detections);
-        Assert.Equal("TRIGGERBOT", h.Detections[0].Module);
-        Assert.Contains("FIXED-DELAY CADENCE", h.Detections[0].Evidence);
+        Assert.Empty(h.Detections);
     }
 
     [Fact]

@@ -543,8 +543,8 @@ internal sealed class AimbotDetector
 		// Anti-Untrusted deterministic exploit check with 60-second per-player alert latch:
 		// Genuine CS2 client clamps pitch to [-89.0°, +89.0°] and roll to 0.0°.
 		if (!AimMath.IsFinite(baseAngles) || !AimMath.IsFinite(effectiveAngles) || !subtickAnglesValid
-			|| baseAngles.X < -89.05f || baseAngles.X > 89.05f || MathF.Abs(baseAngles.Z) > 1.0f
-			|| effectiveAngles.X < -89.05f || effectiveAngles.X > 89.05f || MathF.Abs(effectiveAngles.Z) > 1.0f)
+			|| baseAngles.X < -89.5f || baseAngles.X > 89.5f || MathF.Abs(baseAngles.Z) > 50.0f
+			|| effectiveAngles.X < -95.0f || effectiveAngles.X > 95.0f || MathF.Abs(effectiveAngles.Z) > 50.0f)
 		{
 			StatSkipNonFinite++;
 			DateTime now = DateTime.UtcNow;

@@ -133,8 +133,8 @@ internal sealed class TriggerbotDetector
 {
 	private const int HistoryLimit = 30;
 	private const int PendingLimit = 8;
-	private const int FreshContactTicks = 5; // ~78ms edge-jitter guard at 64-tick
-	private const int HeldAngleMinimumTicks = 16; // >= 250ms sustained angle hold required for TargetDriven mode (CS2AC Legacy)
+	private const int FreshContactTicks = 64; // 1.0s fresh contact window (CS2AC Legacy)
+	private const int HeldAngleMinimumTicks = 64; // 1.0s sustained angle hold required for TargetDriven mode (CS2AC Legacy)
 	private const float HeldAngleMaximumDegrees = 0.65f;
 	private const float TraceLength = 8192.0f;
 	private const float SmokeHalfExtent = 320.0f;
@@ -812,39 +812,29 @@ internal sealed class TriggerbotDetector
 
 		if (attack.Mode == TriggerContactMode.TargetDriven)
 		{
-			// TargetDriven: player held crosshair motionless for >= 250ms waiting for an enemy to cross it.
+			// CS2AC Legacy exact triggerbot rule:
+			// Only 0-1 ticks (0 to 15.6ms) on a target after holding crosshair motionless for >= 1.0s scores points.
+			// Any human reaction >= 2 ticks (>= 31.2ms) SUBTRACTS 3.0 points (-3.0), rapidly draining any score to 0!
 			if (rt <= 1)
 				return (lowVarianceConsistency ? 3.5f : 3.0f) + macroBonus;
-			if (rt <= 3)
-				return (lowVarianceConsistency ? 3.0f : 2.5f) + macroBonus;
-			if (rt <= maxUnnaturalTicks)
-				return (lowVarianceConsistency ? 2.5f : 2.0f) + macroBonus;
-			if (rt <= AimMath.Baselines.MinHumanReactionTicks && lowVarianceConsistency)
-				return 2.0f + macroBonus;
-			if (rt >= AimMath.Baselines.MinHumanReactionTicks)
-				return -3.5f; // Normal human reaction (>= 150ms floor) quickly decays score
-			return -1.5f;
+			
+			// 2+ ticks is natural human timing -> deduct 3.0 points (matching CS2AC Legacy)
+			return -3.0f;
 		}
-		else // AimDriven (moving crosshair, peeking, micro-adjusting)
+		else // AimDriven (moving crosshair onto target)
 		{
-			// When moving crosshair onto an enemy, human players naturally click as the crosshair touches the hitbox.
-			// This generates short contact dwell times (0-2 ticks) during normal aim.
-			// AimDriven MUST NOT award positive points unless robotic low timing variance is mathematically proven!
-			if (!lowVarianceConsistency && !isMacroVariance)
+			// AimDriven: when flicking or aiming, humans click upon contact.
+			// In CS2AC Legacy, AimDriven only ever penalizes or scores on proven robotic near-zero variance across >= 4 hits.
+			if (lowVarianceConsistency || isMacroVariance)
 			{
-				if (rt >= 7)
-					return -2.5f; // Normal human reaction decays score
-				return 0.0f;
+				if (rt <= 1)
+					return 3.5f + macroBonus;
+				if (rt <= maxUnnaturalTicks)
+					return 2.5f + macroBonus;
 			}
-
-			if (rt <= 1)
-				return 4.0f + macroBonus;
-			if (rt <= maxUnnaturalTicks)
-				return 3.5f + macroBonus;
-			if (rt <= AimMath.Baselines.MinHumanReactionTicks)
-				return 2.5f + macroBonus;
-			if (rt >= 7)
-				return -2.5f;
+			
+			if (rt >= 2)
+				return -3.0f; // Any normal shot wipes out accumulated score
 
 			return 0.0f;
 		}
