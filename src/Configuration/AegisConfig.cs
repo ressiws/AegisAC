@@ -144,14 +144,14 @@ public sealed class AimlockConfig
 }
 
 /// <summary>
-/// Configuration for the Anti-Aim, Sub-Tick Integrity, and Movement Automation detection module.
+/// Configuration for the Anti-Aim and Spinbot detection module.
 /// </summary>
 public sealed class AntiAimConfig
 {
-	[Description("Enable or disable the Anti-Aim, Sub-Tick Integrity, and Movement detection module.")]
+	[Description("Enable or disable the Anti-Aim and Spinbot detection module.")]
 	public bool Enabled { get; set; } = true;
 
-	[Description("Punishment applied when Anti-Aim or Sub-Tick/Movement tampering is detected: 'none', 'kick', or 'ban'. Keep 'none' during calibration.")]
+	[Description("Punishment applied when Anti-Aim or Spinbot is detected: 'none', 'kick', or 'ban'. Keep 'none' during calibration.")]
 	[JsonConverter(typeof(JsonStringEnumConverter))]
 	public PunishmentType Punishment { get; set; } = PunishmentType.None;
 
@@ -160,24 +160,59 @@ public sealed class AntiAimConfig
 
 	[Description("Enable multi-tier continuous Spinbot (720/1440/2880 deg/s) and alternating Yaw Jitter detection.")]
 	public bool EnableSpinbotCheck { get; set; } = true;
+}
 
-	[Description("Enable CSubtickMoveStep integrity and InvalidInput button-state consistency verification.")]
-	public bool EnableSubtickIntegrityCheck { get; set; } = true;
+/// <summary>
+/// Configuration for the Movement Automation detection module (Bhop, Nulls / Snap-Tap, AutoStrafe).
+/// </summary>
+public sealed class MovementConfig
+{
+	[Description("Enable or disable the Movement automation detection module.")]
+	public bool Enabled { get; set; } = true;
 
-	[Description("Enable Desubtick detection when >= 90% of non-analog subtick moves have fractional timing flattened to 0.0.")]
-	public bool EnableDesubtickCheck { get; set; } = true;
+	[Description("Punishment applied when Movement automation is detected: 'none', 'kick', or 'ban'. Keep 'none' during calibration.")]
+	[JsonConverter(typeof(JsonStringEnumConverter))]
+	public PunishmentType Punishment { get; set; } = PunishmentType.None;
 
-	[Description("Enable automated movement script detection (AutoStrafe yaw symmetry, frame-perfect Bhop, and airborne Nulls / Snap-Tap).")]
-	public bool EnableMovementChecks { get; set; } = true;
+	[Description("Enable frame-perfect bunnyhop landing chain detection.")]
+	public bool EnableBhopCheck { get; set; } = true;
 
-	[Description("Enable NameChanger spam detection (>= 5 visible name changes within 60 seconds).")]
-	public bool EnableNameChangerCheck { get; set; } = true;
-
-	[Description("Consecutive frame-perfect bunnyhop landings (after >= 4 air ticks) required to flag Bhop automation (default: 10).")]
+	[Description("Consecutive frame-perfect bunnyhop landings required to flag Bhop automation (default: 10).")]
 	public int BhopStreakThreshold { get; set; } = 10;
+
+	[Description("Enable airborne Nulls / Snap-Tap (SOCD) opposite-direction switch detection.")]
+	public bool EnableNullsCheck { get; set; } = true;
 
 	[Description("Consecutive airborne 0.00ms opposite-direction strafe transitions (A <-> D) required to flag Nulls / Snap-Tap (default: 64).")]
 	public int NullsStreakThreshold { get; set; } = 64;
+
+	[Description("Enable airborne AutoStrafe / Strafe Optimizer mechanical symmetry detection.")]
+	public bool EnableAutoStrafeCheck { get; set; } = true;
+}
+
+/// <summary>
+/// Configuration for the Exploits and Input Integrity detection module (Subtick Tamper, Desubtick, Invalid Input, NameChanger).
+/// </summary>
+public sealed class ExploitsConfig
+{
+	[Description("Enable or disable the Exploits and Input Integrity detection module.")]
+	public bool Enabled { get; set; } = true;
+
+	[Description("Punishment applied when Exploits / Input tampering is detected: 'none', 'kick', or 'ban'. Keep 'none' during calibration.")]
+	[JsonConverter(typeof(JsonStringEnumConverter))]
+	public PunishmentType Punishment { get; set; } = PunishmentType.None;
+
+	[Description("Enable CSubtickMoveStep extreme fraction and timestamp tampering verification.")]
+	public bool EnableSubtickTamperCheck { get; set; } = true;
+
+	[Description("Enable Desubtick detection when >= 90% of subtick moves have fractional timing flattened to 0.0.")]
+	public bool EnableDesubtickCheck { get; set; } = true;
+
+	[Description("Enable Invalid Input verification checking movement buttons against subtick records.")]
+	public bool EnableInvalidInputCheck { get; set; } = true;
+
+	[Description("Enable NameChanger spam detection (>= 5 visible name changes within 60 seconds).")]
+	public bool EnableNameChangerCheck { get; set; } = true;
 }
 
 /// <summary>
@@ -240,8 +275,14 @@ public sealed class AegisConfig
 	[Description("Aimlock wall-tracking detector configuration.")]
 	public AimlockConfig Aimlock { get; set; } = new();
 
-	[Description("Anti-Aim, Spinbot, Sub-Tick Integrity, and Movement Automation detector configuration.")]
+	[Description("Anti-Aim and Spinbot detector configuration.")]
 	public AntiAimConfig AntiAim { get; set; } = new();
+
+	[Description("Movement Automation (Bhop, Nulls / Snap-Tap, AutoStrafe) detector configuration.")]
+	public MovementConfig Movement { get; set; } = new();
+
+	[Description("Exploits and Input Integrity (Subtick Tamper, Desubtick, Invalid Input, NameChanger) detector configuration.")]
+	public ExploitsConfig Exploits { get; set; } = new();
 
 	[Description("Client Event Subscription (DLL Injection) detector configuration.")]
 	public DllInjectionConfig DllInjection { get; set; } = new();

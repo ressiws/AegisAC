@@ -35,6 +35,8 @@ public sealed class AegisAC : BasePlugin
 	private TriggerbotDetector _triggerbot = null!;
 	private AimlockDetector _aimlock = null!;
 	private AntiAimDetector _antiAim = null!;
+	private MovementDetector _movement = null!;
+	private ExploitsDetector _exploits = null!;
 	private DllInjectionDetector _dllInjection = null!;
 	private IDisposable? _configChangeToken;
 	private Guid _fireBulletsHookGuid;
@@ -97,6 +99,28 @@ public sealed class AegisAC : BasePlugin
 			{
 				if (player != null)
 					AnnounceAntiAim(player, detection, details);
+			});
+
+		_movement = new MovementDetector(
+			Core,
+			null,
+			_config.Movement,
+			_networkSafety,
+			(player, detection, details, _) =>
+			{
+				if (player != null)
+					AnnounceMovement(player, detection, details);
+			});
+
+		_exploits = new ExploitsDetector(
+			Core,
+			null,
+			_config.Exploits,
+			_networkSafety,
+			(player, detection, details, _) =>
+			{
+				if (player != null)
+					AnnounceExploits(player, detection, details);
 			});
 
 		_dllInjection = new DllInjectionDetector(
@@ -162,6 +186,8 @@ public sealed class AegisAC : BasePlugin
 			_triggerbot?.UpdateConfig(_config.Triggerbot);
 			_aimlock?.UpdateConfig(_config.Aimlock);
 			_antiAim?.UpdateConfig(_config.AntiAim);
+			_movement?.UpdateConfig(_config.Movement);
+			_exploits?.UpdateConfig(_config.Exploits);
 			_dllInjection?.UpdateConfig(_config.DllInjection);
 		}
 	}
@@ -214,6 +240,8 @@ public sealed class AegisAC : BasePlugin
 		_triggerbot.OnProcessUsercmds(player, ctx.Params.Usercmds);
 		_aimlock.OnProcessUsercmds(player, ctx.Params.Usercmds);
 		_antiAim.OnProcessUsercmds(player, ctx.Params.Usercmds, tick);
+		_movement.OnProcessUsercmds(player, ctx.Params.Usercmds, tick);
+		_exploits.OnProcessUsercmds(player, ctx.Params.Usercmds, tick);
 	}
 
 	private void OnSetupMove(ref SetupMoveMovementPreContext ctx)
@@ -254,6 +282,8 @@ public sealed class AegisAC : BasePlugin
 		_triggerbot.OnClientDisconnect(e.PlayerId);
 		_aimlock.OnClientDisconnect(e.PlayerId);
 		_antiAim.ResetPlayer(e.PlayerId);
+		_movement.ResetPlayer(e.PlayerId);
+		_exploits.ResetPlayer(e.PlayerId);
 		_dllInjection.ResetPlayer(e.PlayerId);
 	}
 
@@ -265,6 +295,8 @@ public sealed class AegisAC : BasePlugin
 		_triggerbot.Reset();
 		_aimlock.Reset();
 		_antiAim.ResetAll();
+		_movement.ResetAll();
+		_exploits.ResetAll();
 		_dllInjection.ResetAll();
 	}
 
@@ -351,6 +383,8 @@ public sealed class AegisAC : BasePlugin
 		context.Reply($"  Triggerbot  : {_triggerbot.Stats()}");
 		context.Reply($"  Aimlock     : {_aimlock.Stats()}");
 		context.Reply($"  AntiAim     : {_antiAim.Stats()}");
+		context.Reply($"  Movement    : {_movement.Stats()}");
+		context.Reply($"  Exploits    : {_exploits.Stats()}");
 		context.Reply($"  DllInjection: {_dllInjection.Stats()}");
 	}
 
@@ -494,8 +528,38 @@ public sealed class AegisAC : BasePlugin
 	private void AnnounceAimlock(IPlayer player, string detection, string evidence) =>
 		AnnounceDetection(player, "Aimlock", detection, evidence, _config.Aimlock.Punishment);
 
+	[Command("movement_status", registerRaw: true, permission: "@css/root")]
+	public void MovementStatusCommand(ICommandContext context)
+	{
+		if (!_config.Debug)
+		{
+			context.Reply("[AegisAC] Debug mode is disabled.");
+			return;
+		}
+
+		context.Reply($"[AegisAC Movement] tick={CurrentTick} {_movement.Stats()}");
+	}
+
+	[Command("exploits_status", registerRaw: true, permission: "@css/root")]
+	public void ExploitsStatusCommand(ICommandContext context)
+	{
+		if (!_config.Debug)
+		{
+			context.Reply("[AegisAC] Debug mode is disabled.");
+			return;
+		}
+
+		context.Reply($"[AegisAC Exploits] tick={CurrentTick} {_exploits.Stats()}");
+	}
+
 	private void AnnounceAntiAim(IPlayer player, string detection, string evidence) =>
 		AnnounceDetection(player, "AntiAim", detection, evidence, _config.AntiAim.Punishment);
+
+	private void AnnounceMovement(IPlayer player, string detection, string evidence) =>
+		AnnounceDetection(player, "Movement", detection, evidence, _config.Movement.Punishment);
+
+	private void AnnounceExploits(IPlayer player, string detection, string evidence) =>
+		AnnounceDetection(player, "Exploits", detection, evidence, _config.Exploits.Punishment);
 
 	private void AnnounceDllInjection(IPlayer player, string detection, string evidence) =>
 		AnnounceDetection(player, "DllInjection", detection, evidence, _config.DllInjection.Punishment);

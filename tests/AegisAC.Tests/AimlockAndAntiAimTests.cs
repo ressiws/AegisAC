@@ -215,11 +215,11 @@ public class AimlockAndAntiAimTests
     }
 
     [Fact]
-    public void AntiAim_SubtickTampering_DetectsNonMonotonicFractionsAndDuplicateButtonTransitions()
+    public void Exploits_SubtickTampering_DetectsNonMonotonicFractionsAndDuplicateButtonTransitions()
     {
         var alerts = new List<(string Mode, string Details)>();
-        var config = new AimbotConfig { Enabled = true, EnableAntiAim = true };
-        var antiAim = new AntiAimDetector(
+        var config = new ExploitsConfig { Enabled = true };
+        var exploits = new ExploitsDetector(
             null,
             null,
             config,
@@ -235,7 +235,7 @@ public class AimlockAndAntiAimTests
 
         for (int i = 0; i < 3; i++)
         {
-            bool valid = antiAim.VerifySubtickStepList(1, badSteps);
+            bool valid = exploits.VerifySubtickStepList(1, badSteps);
             Assert.False(valid);
         }
 
@@ -259,7 +259,7 @@ public class AimlockAndAntiAimTests
 
         for (int i = 0; i < 50; i++)
         {
-            bool valid = antiAim.VerifySubtickStepList(2, legitMixedSteps);
+            bool valid = exploits.VerifySubtickStepList(2, legitMixedSteps);
             Assert.True(valid);
         }
 
@@ -267,69 +267,79 @@ public class AimlockAndAntiAimTests
     }
 
     [Fact]
-    public void AntiAim_DesubtickNullsBhopAndNameChanger_DetectedDeterministically()
+    public void MovementAndExploits_SeparatedModules_DetectedDeterministically()
     {
         var alerts = new List<(string Mode, string Details)>();
-        var config = new AimbotConfig { Enabled = true, EnableAntiAim = true };
-        var antiAim = new AntiAimDetector(
+        var expConfig = new ExploitsConfig { Enabled = true };
+        var movConfig = new MovementConfig { Enabled = true };
+        var dllConfig = new DllInjectionConfig { Enabled = true };
+
+        var exploits = new ExploitsDetector(
             null,
             null,
-            config,
+            expConfig,
             null,
             (_, mode, details, _) => alerts.Add((mode, details)));
 
-        // 1. Desubticking: 30 commands with non-analog button press flattened to When == 0.0f
+        var movement = new MovementDetector(
+            null,
+            null,
+            movConfig,
+            null,
+            (_, mode, details, _) => alerts.Add((mode, details)));
+
+        // 1. Desubticking via Exploits module: 30 commands with non-analog button press flattened to When == 0.0f
         (ulong Button, bool Pressed, float When, float PitchDelta, float YawDelta)[] desubtickSteps =
         [
             (8UL, true, 0.0f, 0f, 0f)
         ];
         for (int i = 1; i <= 30; i++)
         {
-            antiAim.VerifySubtickStepList(1, desubtickSteps, commandNumber: i);
+            exploits.VerifySubtickStepList(1, desubtickSteps);
         }
         Assert.Contains(alerts, a => a.Mode == "Desubtick");
 
-        // 2. Airborne Nulls / Snap-Tap: 64 consecutive opposite-axis switches (512 <-> 1024) with 0.00ms underlap
+        // 2. Airborne Nulls / Snap-Tap via Movement module: 64 consecutive opposite-axis switches (512 <-> 1024) with 0.00ms underlap
         alerts.Clear();
         for (int i = 1; i <= 64; i++)
         {
             ulong releaseBtn = (i % 2 == 0) ? 512UL : 1024UL;
             ulong pressBtn = (i % 2 == 0) ? 1024UL : 512UL;
-            (ulong Button, bool Pressed, float When, float PitchDelta, float YawDelta)[] nullPair =
+            (ulong Button, bool Pressed, float When)[] nullPair =
             [
-                (releaseBtn, false, 0.50f, 0f, 0f),
-                (pressBtn, true, 0.50f, 0f, 0f)
+                (releaseBtn, false, 0.50f),
+                (pressBtn, true, 0.50f)
             ];
-            antiAim.VerifySubtickStepList(2, nullPair, commandNumber: i, isAirborne: true);
+            movement.VerifyAirborneNullsSpan(2, nullPair, commandNumber: i);
         }
         Assert.Contains(alerts, a => a.Mode == "Nulls");
 
-        // 3. Bhop: 10 consecutive frame-perfect bunnyhop landings after >= 4 air ticks
+        // 3. Bhop via Movement module: 10 consecutive frame-perfect bunnyhop landings after >= 4 air ticks
         alerts.Clear();
         for (int hop = 0; hop < 10; hop++)
         {
             for (int air = 0; air < 5; air++)
-                antiAim.RecordBhopStep(3, null, "Bhopper", isAirborne: true);
-            antiAim.RecordBhopStep(3, null, "Bhopper", isAirborne: false, jumpedOnLandingTick: true);
+                movement.RecordBhopStep(3, null, "Bhopper", isAirborne: true);
+            movement.RecordBhopStep(3, null, "Bhopper", isAirborne: false, jumpedOnLandingTick: true);
         }
         Assert.Contains(alerts, a => a.Mode == "Bhop");
 
-        // 4. NameChanger: 5 name changes within 60 seconds
+        // 4. NameChanger via Exploits module: 5 name changes within 60 seconds
         alerts.Clear();
         DateTime t0 = DateTime.UtcNow;
-        antiAim.CheckPlayerNameChange(4, null, "InitialName", t0);
+        exploits.CheckPlayerNameChange(4, null, "InitialName", t0);
         for (int c = 1; c <= 5; c++)
         {
-            antiAim.CheckPlayerNameChange(4, null, $"SpamName_{c}", t0.AddSeconds(c * 2));
+            exploits.CheckPlayerNameChange(4, null, $"SpamName_{c}", t0.AddSeconds(c * 2));
         }
         Assert.Contains(alerts, a => a.Mode == "NameChanger");
 
-        // 5. DLL Injection (117 blacklisted client event subscriptions via dedicated DllInjectionDetector module)
+        // 5. DLL Injection via DllInjectionDetector module
         Assert.Equal(105, DllInjectionDetector.BlacklistedClientEvents.Length);
         var dllInjection = new DllInjectionDetector(
             null,
             null,
-            config,
+            dllConfig,
             (_, mode, details, _) => alerts.Add((mode, details)));
 
         alerts.Clear();
@@ -502,7 +512,9 @@ public class AimlockAndAntiAimTests
             (_, _, _, _) => true,
             net);
 
-        var antiAim = new AntiAimDetector(null, null, aimConfig, net);
+        var antiAim = new AntiAimDetector(null, null, new AntiAimConfig { Enabled = true }, net);
+        var movement = new MovementDetector(null, null, new MovementConfig { Enabled = true }, net);
+        var exploits = new ExploitsDetector(null, null, new ExploitsConfig { Enabled = true }, net);
 
         // Simulate 64 ticks (1.0 full second) of 64 active players (4,096 player-ticks)
         var sw = Stopwatch.StartNew();
