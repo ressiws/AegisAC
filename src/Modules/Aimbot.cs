@@ -1566,7 +1566,7 @@ internal sealed class AimbotDetector
 
 			// 1. Blatant Rage Snap: >= 45° in 1 tick landing directly on target (or >= 90° within 10°)
 			bool isBlatantRageSnap = serverGap <= 1 && clientGap <= 1
-				&& ((snap >= 90.0f && after <= 10.0f) || (snap >= 45.0f && after <= targetAngularRadius * 1.35f && before >= 30.0f));
+				&& ((snap >= 120.0f && after <= 10.0f) || (snap >= 95.0f && after <= targetAngularRadius * 1.35f && before >= 80.0f));
 
 			// 2. Standard Snap Convergence (>= SnapAngleThreshold, e.g. 10°)
 			bool isStandardSnap = !networkUnstable
