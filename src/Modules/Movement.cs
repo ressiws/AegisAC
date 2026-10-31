@@ -272,19 +272,6 @@ internal sealed class MovementDetector
         if (isAirborne)
         {
             state.AirTicks++;
-            if (state.WasAirborne && jumpedOnLandingTick && state.AirTicks >= 4)
-            {
-                state.ConsecutivePerfBhops++;
-                if (state.ConsecutivePerfBhops >= bhopThreshold)
-                {
-                    state.ConsecutivePerfBhops = 0;
-                    StatBhopDetections++;
-                    string details = $"{bhopThreshold} consecutive frame-perfect bunnyhops without ground friction loss.";
-                    _logger?.LogWarning("[AegisAC] [Movement] {Name} {Details}", playerName, details);
-                    _onViolation?.Invoke(player, "Bhop", details, _config.Punishment);
-                    return true;
-                }
-            }
             state.WasAirborne = true;
         }
         else

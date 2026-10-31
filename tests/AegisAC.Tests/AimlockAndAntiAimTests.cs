@@ -401,6 +401,28 @@ public class AimlockAndAntiAimTests
     }
 
     [Fact]
+    public void Movement_HoldingJumpWhileAirborne_DoesNotTriggerBhopAlert()
+    {
+        var alerts = new List<(string Mode, string Reason)>();
+        var movement = new MovementDetector(
+            null, null,
+            new MovementConfig { Enabled = true, EnableBhopCheck = true, BhopStreakThreshold = 5 },
+            null,
+            (p, mode, reason, pun) => alerts.Add((mode, reason)),
+            () => false);
+
+        // Player does ONE jump and holds spacebar continuously for 30 ticks while in the air
+        for (int air = 0; air < 30; air++)
+        {
+            movement.RecordBhopStep(5, null, "LegitPlayer", isAirborne: true, jumpedOnLandingTick: true);
+        }
+        // Player lands without jumping on the landing tick
+        movement.RecordBhopStep(5, null, "LegitPlayer", isAirborne: false, jumpedOnLandingTick: false);
+
+        Assert.Empty(alerts);
+    }
+
+    [Fact]
     public void AntiAim_ContinuousSpinbotAndYawJitter_DetectedWhileCombatFlicksIgnored()
     {
         var alerts = new List<(string Mode, string Details)>();

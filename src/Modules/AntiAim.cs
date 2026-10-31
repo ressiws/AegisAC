@@ -294,6 +294,7 @@ internal sealed class AntiAimDetector
         if ((isDeterministicNonFinite || state.UntrustedDetections >= 2) && (now - state.LastUntrustedAlertTime).TotalSeconds >= 60.0)
         {
             state.LastUntrustedAlertTime = now;
+            state.UntrustedDetections = 0;
             StatUntrustedDetections++;
 
             string details = $"Anti-Untrusted exploit detected: {reason}. (#{state.UntrustedDetections})";

@@ -68,11 +68,11 @@ public static class DiscordWebhookNotifier
 						"🟡 **MEDIUM RISK (Heuristic Anomaly)**"
 				};
 
-				float confidencePct = moduleName switch
+				string verificationTier = moduleName switch
 				{
-					"DllInjection" or "CVarScanner" or "Anti-Untrusted" or "Exploits" => 99.9f,
-					"SilentAim" or "Aimbot" or "AntiAim" or "Aimlock" => 98.5f,
-					_ => 94.0f
+					"DllInjection" or "CVarScanner" or "Anti-Untrusted" or "Exploits" => "Deterministic Protocol Invariant",
+					"SilentAim" or "Aimbot" or "AntiAim" or "Aimlock" => "Multi-Incident Behavioral Consensus",
+					_ => "Heuristic Telemetry Threshold"
 				};
 
 				string steamValue = steamId > 0
@@ -125,7 +125,7 @@ public static class DiscordWebhookNotifier
 						"**ACTION TAKEN**\n" +
 						actionLabel + "\n\n" +
 						"**RISK ASSESSMENT**\n" +
-						$"{riskLevel} (`{confidencePct:F1}%`)"
+						$"{riskLevel}\n*Tier: {verificationTier}*"
 					)
 				};
 
@@ -183,7 +183,7 @@ public static class DiscordWebhookNotifier
 						new { name = "👤 Player", value = $"{EscapeInline(playerName)}\n{steamValue}", @inline = true },
 						new { name = "🛡️ Detection", value = $"**Module:** `{EscapeInline(moduleName)}`\n**Action:** {actionLabel}", @inline = true },
 						new { name = "🎮 Match Context", value = $"**Server:** `{EscapeInline(serverId)}`\n**Map:** `{EscapeInline(mapName)}`\n**Tick:** `{serverTick}`", @inline = true },
-						new { name = "🎯 Risk & Confidence", value = $"{riskLevel} · Confidence: **{confidencePct:F1}%**", @inline = false },
+						new { name = "🎯 Risk & Verification", value = $"{riskLevel}\n**Tier:** `{verificationTier}`", @inline = false },
 						new { name = "📋 Detection Details", value = $"`{EscapeInline(detectionReason)}`", @inline = false },
 						new { name = "📊 Incident Evidence", value = $"```text\n{displayEvidence}\n```", @inline = false }
 					},

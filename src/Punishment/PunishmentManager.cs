@@ -81,7 +81,7 @@ public sealed class PunishmentManager
 			_core.Engine.ExecuteCommand($"sw_addban {player.SteamID} 0 \"[AegisAC] {Sanitize(reason)}\"");
 			player.Kick($"[AegisAC] {reason}", default);
 		}
-		else if (string.Equals(system, "Custom", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(_config.BanCommand))
+		else if (!string.IsNullOrWhiteSpace(_config.BanCommand) && (string.Equals(system, "Custom", StringComparison.OrdinalIgnoreCase) || !_config.BanCommand.StartsWith("sw_ban #{userid} 0", StringComparison.OrdinalIgnoreCase)))
 		{
 			string cmd = FormatCommand(_config.BanCommand, player, name, reason);
 			_core.Engine.ExecuteCommand(cmd);
