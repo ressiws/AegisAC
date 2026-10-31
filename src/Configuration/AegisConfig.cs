@@ -219,6 +219,43 @@ public sealed class ExploitsConfig
 }
 
 /// <summary>
+/// Configuration for the Client ConVar verification / integrity scanner module.
+/// </summary>
+public sealed class CVarScannerConfig
+{
+	[Description("Enable or disable the Client ConVar verification scanner module.")]
+	public bool Enabled { get; set; } = true;
+
+	[Description("Punishment applied when forbidden client CVars are detected: 'none', 'kick', or 'ban'. Keep 'none' during calibration.")]
+	[JsonConverter(typeof(JsonStringEnumConverter))]
+	public PunishmentType Punishment { get; set; } = PunishmentType.None;
+
+	[Description("Initial delay in seconds after a player connects before running their first CVar query scan (default: 15.0s).")]
+	public float InitialScanDelaySeconds { get; set; } = 15.0f;
+
+	[Description("Interval in seconds between recurring CVar query scans per player (default: 90.0s).")]
+	public float ScanIntervalSeconds { get; set; } = 90.0f;
+
+	[Description("Enable verification of r_drawothermodels (flags wireframe wallhack value '2').")]
+	public bool CheckDrawOtherModels { get; set; } = true;
+
+	[Description("Enable verification of mat_wireframe (flags values other than '0').")]
+	public bool CheckMatWireframe { get; set; } = true;
+
+	[Description("Enable verification of sv_cheats (flags client reporting '1' on secure servers).")]
+	public bool CheckSvCheats { get; set; } = true;
+
+	[Description("Enable verification of host_timescale (flags speedhack timescale values != 1.0).")]
+	public bool CheckHostTimescale { get; set; } = true;
+
+	[Description("Enable verification of fog_enable (flags disabling fog '0').")]
+	public bool CheckFogEnable { get; set; } = true;
+
+	[Description("Enable verification of client prediction and lag compensation settings (cl_lagcompensation, cl_predict).")]
+	public bool CheckPredictionAndLagComp { get; set; } = true;
+}
+
+/// <summary>
 /// Configuration for the Client Event Subscription / DLL Injection detection module.
 /// </summary>
 public sealed class DllInjectionConfig
@@ -286,6 +323,9 @@ public sealed class AegisConfig
 
 	[Description("Exploits and Input Integrity (Subtick Tamper, Desubtick, Invalid Input, NameChanger) detector configuration.")]
 	public ExploitsConfig Exploits { get; set; } = new();
+
+	[Description("Client ConVar verification (CVarScanner) detector configuration.")]
+	public CVarScannerConfig CVarScanner { get; set; } = new();
 
 	[Description("Client Event Subscription (DLL Injection) detector configuration.")]
 	public DllInjectionConfig DllInjection { get; set; } = new();

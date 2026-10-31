@@ -590,4 +590,71 @@ public class AimlockAndAntiAimTests
         // Must run well within CS2's 15.625 ms/tick 64Hz server budget (even including DispatchProxy test reflection overhead)
         Assert.True(msPerTick < 14.5, $"Expected < 12.0 ms/tick for 64 players, got {msPerTick:F3} ms/tick");
     }
+
+    [Fact]
+    public void CVarScanner_DetectsForbiddenClientConVars_AndHonorsServerSvCheatsBypass()
+    {
+        var alerts = new List<(string Detection, string Details)>();
+        bool serverSvCheats = false;
+
+        var config = new CVarScannerConfig
+        {
+            Enabled = true,
+            CheckDrawOtherModels = true,
+            CheckMatWireframe = true,
+            CheckSvCheats = true,
+            CheckHostTimescale = true,
+            CheckFogEnable = true,
+            CheckPredictionAndLagComp = true
+        };
+
+        var detector = new CVarScannerDetector(
+            null,
+            null,
+            config,
+            (player, detection, details, _) => alerts.Add((detection, details)),
+            () => serverSvCheats);
+
+        var (player, state) = TestPlayerFactory.CreatePlayer(1);
+
+        // 1. Clean player defaults -> zero detections
+        state.ConVars["r_drawothermodels"] = "1";
+        state.ConVars["mat_wireframe"] = "0";
+        state.ConVars["sv_cheats"] = "0";
+        state.ConVars["host_timescale"] = "1.0";
+        state.ConVars["fog_enable"] = "1";
+        state.ConVars["cl_lagcompensation"] = "1";
+        state.ConVars["cl_predict"] = "1";
+
+        bool cleanResult = detector.ScanPlayerCVars(1, player, "CleanUser", cvar => player.GetClientConvarValue(cvar));
+        Assert.False(cleanResult);
+        Assert.Empty(alerts);
+
+        // 2. Client tampering: wireframe wallhack (r_drawothermodels = 2)
+        state.ConVars["r_drawothermodels"] = "2";
+        bool rOtherResult = detector.ScanPlayerCVars(1, player, "Wallhacker", cvar => player.GetClientConvarValue(cvar));
+        Assert.True(rOtherResult);
+        Assert.Single(alerts);
+        Assert.Equal("Forbidden CVar", alerts[0].Detection);
+        Assert.Contains("r_drawothermodels=\"2\"", alerts[0].Details);
+        alerts.Clear();
+
+        // 3. Client tampering: timescale speedhack (host_timescale = 2.0)
+        state.ConVars["r_drawothermodels"] = "1";
+        state.ConVars["host_timescale"] = "2.0";
+        bool speedResult = detector.ScanPlayerCVars(1, player, "Speedhacker", cvar => player.GetClientConvarValue(cvar));
+        Assert.True(speedResult);
+        Assert.Single(alerts);
+        Assert.Contains("host_timescale=\"2.0\"", alerts[0].Details);
+        alerts.Clear();
+
+        // 4. Server sv_cheats 1 bypass -> wireframe & timescale must NOT be flagged when server allows cheats
+        serverSvCheats = true;
+        state.ConVars["host_timescale"] = "2.0";
+        state.ConVars["r_drawothermodels"] = "2";
+        state.ConVars["mat_wireframe"] = "1";
+        bool cheatBypassResult = detector.ScanPlayerCVars(1, player, "AdminTestingCheats", cvar => player.GetClientConvarValue(cvar));
+        Assert.False(cheatBypassResult);
+        Assert.Empty(alerts);
+    }
 }

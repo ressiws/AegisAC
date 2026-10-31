@@ -38,6 +38,7 @@ public sealed class AegisAC : BasePlugin
 	private MovementDetector _movement = null!;
 	private ExploitsDetector _exploits = null!;
 	private DllInjectionDetector _dllInjection = null!;
+	private CVarScannerDetector _cvarScanner = null!;
 	private IDisposable? _configChangeToken;
 	private Guid _fireBulletsHookGuid;
 	private bool _hasFireBulletsHook;
@@ -144,6 +145,27 @@ public sealed class AegisAC : BasePlugin
 					AnnounceDllInjection(player, detection, details);
 			});
 
+		_cvarScanner = new CVarScannerDetector(
+			Core,
+			null,
+			_config.CVarScanner,
+			(player, detection, details, _) =>
+			{
+				if (player != null)
+					AnnounceCVar(player, detection, details);
+			},
+			() =>
+			{
+				try
+				{
+					return Core.ConVar.Find<bool>("sv_cheats")?.Value == true;
+				}
+				catch
+				{
+					return false;
+				}
+			});
+
 		Core.GameHooks.Controller.ProcessUsercmds.Pre += OnProcessUsercmds;
 		Core.GameHooks.Movement.SetupMove.Pre += OnSetupMove;
 		Core.Event.OnTick += OnTick;
@@ -160,7 +182,7 @@ public sealed class AegisAC : BasePlugin
 			Utils.ConsoleLog($"CMsgTEFireBullets netmessage hook unavailable (using conservative spread fallback): {ex.Message}");
 		}
 
-		Utils.Log("initialized. Commands: aegis_status aimbot_status silentaim_status triggerbot_status aimlock_status antiaim_status dllinjection_status aegis_reload");
+		Utils.Log("initialized. Commands: aegis_status aimbot_status silentaim_status triggerbot_status aimlock_status antiaim_status dllinjection_status cvar_status aegis_reload");
 	}
 
 	public override void Unload()
@@ -200,6 +222,7 @@ public sealed class AegisAC : BasePlugin
 			_movement?.UpdateConfig(_config.Movement);
 			_exploits?.UpdateConfig(_config.Exploits);
 			_dllInjection?.UpdateConfig(_config.DllInjection);
+			_cvarScanner?.UpdateConfig(_config.CVarScanner);
 		}
 	}
 
@@ -284,6 +307,7 @@ public sealed class AegisAC : BasePlugin
 		_detector.OnGameFrame(tick);
 		_aimlock.OnGameFrame(tick);
 		_dllInjection.OnGameFrame();
+		_cvarScanner.OnGameFrame();
 	}
 
 	private void OnClientDisconnected(SwiftlyS2.Shared.Events.IOnClientDisconnectedEvent e)
@@ -296,6 +320,7 @@ public sealed class AegisAC : BasePlugin
 		_movement.ResetPlayer(e.PlayerId);
 		_exploits.ResetPlayer(e.PlayerId);
 		_dllInjection.ResetPlayer(e.PlayerId);
+		_cvarScanner.ResetPlayer(e.PlayerId);
 	}
 
 	private void OnMapLoad(SwiftlyS2.Shared.Events.IOnMapLoadEvent e)
@@ -309,6 +334,7 @@ public sealed class AegisAC : BasePlugin
 		_movement.ResetAll();
 		_exploits.ResetAll();
 		_dllInjection.ResetAll();
+		_cvarScanner.ResetAll();
 	}
 
 	[GameEventHandler(HookMode.Post)]
@@ -397,6 +423,7 @@ public sealed class AegisAC : BasePlugin
 		context.Reply($"  Movement    : {_movement.Stats()}");
 		context.Reply($"  Exploits    : {_exploits.Stats()}");
 		context.Reply($"  DllInjection: {_dllInjection.Stats()}");
+		context.Reply($"  CVarScanner : {_cvarScanner.Stats()}");
 	}
 
 	[Command("aimbot_status", registerRaw: true, permission: "@css/root")]
@@ -469,6 +496,18 @@ public sealed class AegisAC : BasePlugin
 		}
 
 		context.Reply($"[AegisAC DllInjection] tick={CurrentTick} {_dllInjection.Stats()}");
+	}
+
+	[Command("cvar_status", registerRaw: true, permission: "@css/root")]
+	public void CVarStatusCommand(ICommandContext context)
+	{
+		if (!_config.Debug)
+		{
+			context.Reply("[AegisAC] Debug mode is disabled.");
+			return;
+		}
+
+		context.Reply($"[AegisAC CVarScanner] tick={CurrentTick} {_cvarScanner.Stats()}");
 	}
 
 	[Command("aegis_reload", registerRaw: true, permission: "@css/root")]
@@ -574,4 +613,7 @@ public sealed class AegisAC : BasePlugin
 
 	private void AnnounceDllInjection(IPlayer player, string detection, string evidence) =>
 		AnnounceDetection(player, "DllInjection", detection, evidence, _config.DllInjection.Punishment);
+
+	private void AnnounceCVar(IPlayer player, string detection, string evidence) =>
+		AnnounceDetection(player, "CVarScanner", detection, evidence, _config.CVarScanner.Punishment);
 }
