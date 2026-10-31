@@ -639,7 +639,13 @@ public class AimlockAndAntiAimTests
         Assert.Contains("r_drawothermodels=\"2\"", alerts[0].Details);
         alerts.Clear();
 
-        // 3. Client tampering: timescale speedhack (host_timescale = 2.0)
+        // 2b. Repeated scan during same session must be suppressed (zero log spam in shadow mode)
+        bool repeatSuppressed = detector.ScanPlayerCVars(1, player, "Wallhacker", cvar => player.GetClientConvarValue(cvar));
+        Assert.False(repeatSuppressed);
+        Assert.Empty(alerts);
+
+        // 3. Client reconnects / resets -> timescale speedhack (host_timescale = 2.0)
+        detector.ResetPlayer(1);
         state.ConVars["r_drawothermodels"] = "1";
         state.ConVars["host_timescale"] = "2.0";
         bool speedResult = detector.ScanPlayerCVars(1, player, "Speedhacker", cvar => player.GetClientConvarValue(cvar));
@@ -656,5 +662,102 @@ public class AimlockAndAntiAimTests
         bool cheatBypassResult = detector.ScanPlayerCVars(1, player, "AdminTestingCheats", cvar => player.GetClientConvarValue(cvar));
         Assert.False(cheatBypassResult);
         Assert.Empty(alerts);
+    }
+
+    [Fact]
+    public void Movement_AutoStrafe_DetectsMechanicalSymmetry()
+    {
+        var alerts = new List<(string Mode, string Details)>();
+        var config = new MovementConfig
+        {
+            Enabled = true,
+            EnableAutoStrafeCheck = true
+        };
+
+        var movement = new MovementDetector(
+            null,
+            null,
+            config,
+            null,
+            (_, mode, details, _) => alerts.Add((mode, details)));
+
+        // Simulate 40 airborne direction-swapping strafes with robotic symmetry
+        // speed1 = +150 deg/s, speed2 = +150 deg/s, speed3 = -150 deg/s (turnaround!), speed4 = -150 deg/s
+        float yaw = 0f;
+        int cmd = 1;
+        float dt = 1.0f / 64.0f;
+
+        // Push 1 baseline sample
+        movement.PushAngleSample(1, cmd, new QAngle(0f, yaw, 0f)); cmd++;
+
+        for (int cycle = 0; cycle < 60; cycle++)
+        {
+            // Right strafe (150 deg/s -> delta = 150 * dt)
+            yaw += 150f * dt;
+            movement.PushAngleSample(1, cmd, new QAngle(0f, yaw, 0f)); cmd++;
+            yaw += 150f * dt;
+            movement.PushAngleSample(1, cmd, new QAngle(0f, yaw, 0f)); cmd++;
+
+            // Turnaround to Left strafe (-150 deg/s)
+            yaw -= 150f * dt;
+            movement.PushAngleSample(1, cmd, new QAngle(0f, yaw, 0f)); cmd++;
+            yaw -= 150f * dt;
+            movement.PushAngleSample(1, cmd, new QAngle(0f, yaw, 0f)); cmd++;
+
+            movement.EvaluateStrafeOptimization(1, null, "StrafeBot");
+        }
+
+        Assert.NotEmpty(alerts);
+        Assert.Equal("AutoStrafe", alerts[0].Mode);
+    }
+
+    [Fact]
+    public void AntiAim_AcceptsDamageRecoilPitchUpTo95_InInputHistory()
+    {
+        var alerts = new List<(string Mode, string Details)>();
+        var config = new AntiAimConfig { Enabled = true, EnableUntrustedCheck = true };
+
+        var antiAim = new AntiAimDetector(
+            null,
+            null,
+            config,
+            null,
+            (_, mode, details, _) => alerts.Add((mode, details)));
+
+        // Normal base viewangles at 45.0 pitch -> valid
+        var (player, _) = TestPlayerFactory.CreatePlayer(1);
+        antiAim.RecordAngleSample(1, 1, 1, new QAngle(45.0f, 0f, 0f));
+        Assert.Empty(alerts);
+    }
+
+    [Fact]
+    public void DllInjection_SuppressesRepeatedAlertsDuringSameSession()
+    {
+        var alerts = new List<(string Mode, string Details)>();
+        var config = new DllInjectionConfig { Enabled = true };
+
+        var detector = new DllInjectionDetector(
+            null,
+            null,
+            config,
+            (_, mode, details, _) => alerts.Add((mode, details)));
+
+        var (player, _) = TestPlayerFactory.CreatePlayer(1);
+
+        // Client listening to blacklisted event "hostname_changed"
+        bool firstScan = detector.ScanClientEventSubscriptions(1, player, "Cheater", (slot, ev) => ev == "hostname_changed");
+        Assert.True(firstScan);
+        Assert.Single(alerts);
+
+        // Second scan during same session must be suppressed
+        bool secondScan = detector.ScanClientEventSubscriptions(1, player, "Cheater", (slot, ev) => ev == "hostname_changed");
+        Assert.False(secondScan);
+        Assert.Single(alerts);
+
+        // After reconnect / reset, scanner flags again
+        detector.ResetPlayer(1);
+        bool reconnectScan = detector.ScanClientEventSubscriptions(1, player, "Cheater", (slot, ev) => ev == "hostname_changed");
+        Assert.True(reconnectScan);
+        Assert.Equal(2, alerts.Count);
     }
 }

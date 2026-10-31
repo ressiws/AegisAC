@@ -214,7 +214,7 @@ internal sealed class AntiAimDetector
                     var entry = pb.InputHistory.Get(i);
                     if (entry.Accessor.HasField("view_angles"))
                     {
-                        if (!VerifyAngles(slot, player, playerName, entry.ViewAngles, "input_history viewangles"))
+                        if (!VerifyAngles(slot, player, playerName, entry.ViewAngles, "input_history viewangles", maxPitch: 95.0f))
                         {
                             break;
                         }
@@ -261,7 +261,7 @@ internal sealed class AntiAimDetector
         return _config.EnableSpinbotCheck && EvaluateMotion(slot, player, playerName);
     }
 
-    private bool VerifyAngles(int slot, IPlayer? player, string playerName, QAngle angles, string context)
+    private bool VerifyAngles(int slot, IPlayer? player, string playerName, QAngle angles, string context, float maxPitch = 89.5f)
     {
         if (!AimMath.IsFinite(angles))
         {
@@ -269,7 +269,7 @@ internal sealed class AntiAimDetector
             return false;
         }
 
-        if (angles.X < -89.5f || angles.X > 89.5f)
+        if (angles.X < -maxPitch || angles.X > maxPitch)
         {
             FlagUntrusted(slot, player, playerName, $"Extreme pitch out of bounds ({angles.X:F2}° in {context})");
             return false;

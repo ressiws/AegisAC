@@ -12,6 +12,7 @@ internal sealed class FakePlayerState
     public ulong SteamID { get; set; }
     public bool IsValid { get; set; } = true;
     public bool IsFakeClient { get; set; } = false;
+    public bool IsAuthorized { get; set; } = true;
     public SyntheticPlayerState Snapshot { get; } = new();
     public Dictionary<string, string> ConVars { get; } = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -79,6 +80,7 @@ internal static class TestPlayerFactory
             "get_SteamID" => state.SteamID,
             "get_IsValid" => state.IsValid,
             "get_IsFakeClient" => state.IsFakeClient,
+            "get_IsAuthorized" => state.IsAuthorized,
             "get_IsAlive" => state.Snapshot.Alive,
             "get_Name" => state.Snapshot.PlayerName,
             "get_PlayerPawn" => null,

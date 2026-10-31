@@ -137,6 +137,7 @@ internal sealed class DllInjectionDetector
     private DllInjectionConfig _config;
     private readonly Action<IPlayer?, string, string, PunishmentType>? _onViolation;
     private readonly DateTime[] _nextScanTimes = new DateTime[MaxPlayers + 1];
+	private readonly bool[] _flaggedThisSession = new bool[MaxPlayers + 1];
 
     public long StatScansCompleted { get; private set; }
     public long StatDetections { get; private set; }
@@ -175,6 +176,7 @@ internal sealed class DllInjectionDetector
     public void ResetAll()
     {
         Array.Clear(_nextScanTimes);
+		Array.Clear(_flaggedThisSession);
         StatScansCompleted = 0;
         StatDetections = 0;
     }
@@ -184,6 +186,7 @@ internal sealed class DllInjectionDetector
         if (ValidSlot(slot))
         {
             _nextScanTimes[slot] = DateTime.MinValue;
+			_flaggedThisSession[slot] = false;
         }
     }
 
@@ -275,6 +278,12 @@ internal sealed class DllInjectionDetector
             return false;
         }
 
+        if (_flaggedThisSession[slot])
+        {
+            return false;
+        }
+
+        _flaggedThisSession[slot] = true;
         StatDetections++;
         string details = $"DLL Injection: client listening for {matchCount} blacklisted game event(s) associated with injected cheats ({matches}).";
         _logger?.LogWarning("[AegisAC] [DllInjection] {Name} {Details}", playerName, details);

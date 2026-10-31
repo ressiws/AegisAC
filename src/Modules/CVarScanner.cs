@@ -27,6 +27,7 @@ internal sealed class CVarScannerDetector
 	private readonly Action<IPlayer?, string, string, PunishmentType>? _onViolation;
 	private readonly Func<bool>? _isSvCheatsActive;
 	private readonly DateTime[] _nextScanTimes = new DateTime[MaxPlayers + 1];
+	private readonly bool[] _flaggedThisSession = new bool[MaxPlayers + 1];
 
 	public long StatScansCompleted { get; private set; }
 	public long StatDetections { get; private set; }
@@ -50,6 +51,7 @@ internal sealed class CVarScannerDetector
 	public void ResetAll()
 	{
 		Array.Clear(_nextScanTimes);
+		Array.Clear(_flaggedThisSession);
 		StatScansCompleted = 0;
 		StatDetections = 0;
 	}
@@ -59,6 +61,7 @@ internal sealed class CVarScannerDetector
 		if (slot >= 0 && slot <= MaxPlayers)
 		{
 			_nextScanTimes[slot] = DateTime.MinValue;
+			_flaggedThisSession[slot] = false;
 		}
 	}
 
@@ -240,6 +243,12 @@ internal sealed class CVarScannerDetector
 			return false;
 		}
 
+		if (_flaggedThisSession[slot])
+		{
+			return false;
+		}
+
+		_flaggedThisSession[slot] = true;
 		StatDetections++;
 		string details = $"Forbidden Client CVar: {violations}";
 		_logger?.LogWarning("[AegisAC] [CVarScanner] {Name} {Details}", playerName, details);

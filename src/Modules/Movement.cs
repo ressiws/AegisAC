@@ -134,6 +134,14 @@ internal sealed class MovementDetector
         }
     }
 
+    internal void PushAngleSample(int slot, int cmdNum, QAngle angles)
+    {
+        if (slot >= 0 && slot <= MaxPlayers)
+        {
+            _players[slot].PushSample(cmdNum, angles);
+        }
+    }
+
     public void OnProcessUsercmds(IPlayer player, List<IUserCmd> cmds, int serverTick)
     {
         if (!_config.Enabled || !AimbotDetector.IsEligibleHuman(player) || cmds.Count == 0)
@@ -156,11 +164,7 @@ internal sealed class MovementDetector
         string playerName = player.Controller?.PlayerName ?? $"Player#{slot}";
         bool isAirborne = (pawn.Flags & 1u) == 0;
 
-        if (_config.EnableBhopCheck)
-        {
-            RecordBhopStep(slot, player, playerName, isAirborne);
-        }
-
+        bool jumpedThisTick = false;
         Span<(ulong Button, bool Pressed, float When)> nullsBuffer = stackalloc (ulong, bool, float)[32];
 
         foreach (var cmd in cmds)
@@ -174,6 +178,32 @@ internal sealed class MovementDetector
             }
 
             var b = pb.Base;
+
+            if (!jumpedThisTick)
+            {
+                if (b.Accessor.HasField("buttons_pb"))
+                {
+                    // IN_JUMP is bit 1 (2UL): check Buttonstate1 (held) and Buttonstate2 (pressed)
+                    if ((b.ButtonsPb.Buttonstate1 & 2UL) != 0 || (b.ButtonsPb.Buttonstate2 & 2UL) != 0)
+                    {
+                        jumpedThisTick = true;
+                    }
+                }
+
+                if (!jumpedThisTick && b.SubtickMoves != null)
+                {
+                    for (int i = 0; i < b.SubtickMoves.Count; i++)
+                    {
+                        var step = b.SubtickMoves.Get(i);
+                        if (step.Button == 2UL && step.Pressed)
+                        {
+                            jumpedThisTick = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
             if (_config.EnableAutoStrafeCheck && b.Accessor.HasField("viewangles"))
             {
                 _players[slot].PushSample(cmdNum, b.Viewangles);
@@ -193,6 +223,11 @@ internal sealed class MovementDetector
                 }
                 VerifyAirborneNullsSpan(slot, nullsBuffer.Slice(0, count), player, playerName, cmdNum);
             }
+        }
+
+        if (_config.EnableBhopCheck)
+        {
+            RecordBhopStep(slot, player, playerName, isAirborne, jumpedThisTick);
         }
     }
 
@@ -371,13 +406,15 @@ internal sealed class MovementDetector
         float speed3 = YawSpeed(hist[2], hist[3]);
         float speed4 = YawSpeed(hist[3], hist[4]);
 
-        bool switchedDirection = (speed3 < 0f) != (speed4 < 0f) && MathF.Abs(speed3) > 10f && MathF.Abs(speed4) > 10f;
+        // Turnaround occurs between speed2 and speed3 (lastAccel)
+        bool switchedDirection = (speed2 < 0f) != (speed3 < 0f) && MathF.Abs(speed2) > 10f && MathF.Abs(speed3) > 10f;
         if (!switchedDirection)
             return false;
 
-        float accel2Ago = MathF.Abs((speed2 - speed1) / TickIntervalSeconds);
-        float lastAccel = MathF.Abs((speed3 - speed2) / TickIntervalSeconds);
-        float currAccel = MathF.Abs((speed4 - speed3) / TickIntervalSeconds);
+        // Change in speed (deg/s) per tick
+        float accel2Ago = MathF.Abs(speed2 - speed1);
+        float lastAccel = MathF.Abs(speed3 - speed2);
+        float currAccel = MathF.Abs(speed4 - speed3);
 
         float diff = MathF.Abs(currAccel - accel2Ago);
         bool matched = false;
