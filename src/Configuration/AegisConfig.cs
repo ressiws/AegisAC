@@ -299,6 +299,27 @@ public sealed class TelemetryConfig
 }
 
 /// <summary>
+/// Configuration for the server-side Anti-WallHack (Fog of War / Entity Transmission Occlusion) module.
+/// </summary>
+public sealed class AntiWallHackConfig
+{
+	[Description("Enable or disable server-side Anti-WallHack entity transmission occlusion.")]
+	public bool Enabled { get; set; } = true;
+
+	[Description("Enable corner-peeking velocity and input lead prediction to prevent pop-in when peeking around corners.")]
+	public bool CornerPrediction { get; set; } = true;
+
+	[Description("Prediction horizon in seconds for corner peeking (0.05 to 0.25).")]
+	public float CornerPredictionSeconds { get; set; } = 0.12f;
+
+	[Description("Number of ticks an enemy remains visible to a player after breaking line of sight to prevent flickering/pop-in.")]
+	public int VisibleGraceTicks { get; set; } = 12;
+
+	[Description("Maximum number of ray traces permitted per server tick to guarantee zero server frame lag.")]
+	public int MaxTracesPerTick { get; set; } = 2048;
+}
+
+/// <summary>
 /// Root configuration for Aegis Anti-Cheat.
 /// </summary>
 public sealed class AegisConfig
@@ -344,6 +365,9 @@ public sealed class AegisConfig
 
 	[Description("Client Event Subscription (DLL Injection) detector configuration.")]
 	public DllInjectionConfig DllInjection { get; set; } = new();
+
+	[Description("Server-side Anti-WallHack and network entity transmission occlusion configuration.")]
+	public AntiWallHackConfig AntiWallHack { get; set; } = new();
 
 	[Description("Incident telemetry and demo proof dump configuration.")]
 	public TelemetryConfig Telemetry { get; set; } = new();

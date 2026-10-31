@@ -14,6 +14,7 @@ using SwiftlyS2.Shared.Natives;
 using SwiftlyS2.Shared.ProtobufDefinitions;
 using AegisAC.Configuration;
 using AegisAC.Modules;
+using AegisAC.Modules.AntiWallHack;
 using AegisAC.Notifications;
 using AegisAC.Punishment;
 using AegisAC.Telemetry;
@@ -40,6 +41,7 @@ public sealed class AegisAC : BasePlugin
 	private ExploitsDetector _exploits = null!;
 	private DllInjectionDetector _dllInjection = null!;
 	private CVarScannerDetector _cvarScanner = null!;
+	private AntiWallHackDetector _antiWallHack = null!;
 	private IDisposable? _configChangeToken;
 	private Guid _fireBulletsHookGuid;
 	private bool _hasFireBulletsHook;
@@ -167,6 +169,8 @@ public sealed class AegisAC : BasePlugin
 				}
 			});
 
+		_antiWallHack = new AntiWallHackDetector(Core, _config.AntiWallHack);
+
 		Core.GameHooks.Controller.ProcessUsercmds.Pre += OnProcessUsercmds;
 		Core.GameHooks.Movement.SetupMove.Pre += OnSetupMove;
 		Core.Event.OnTick += OnTick;
@@ -183,11 +187,12 @@ public sealed class AegisAC : BasePlugin
 			Utils.ConsoleLog($"CMsgTEFireBullets netmessage hook unavailable (using conservative spread fallback): {ex.Message}");
 		}
 
-		Utils.Log("initialized. Commands: aegis_status aimbot_status silentaim_status triggerbot_status aimlock_status antiaim_status dllinjection_status cvar_status aegis_reload");
+		Utils.Log("initialized. Commands: aegis_status aimbot_status silentaim_status triggerbot_status aimlock_status antiaim_status dllinjection_status cvar_status awh_status aegis_reload");
 	}
 
 	public override void Unload()
 	{
+		_antiWallHack?.Dispose();
 		_configChangeToken?.Dispose();
 		if (_hasFireBulletsHook)
 		{
@@ -224,6 +229,7 @@ public sealed class AegisAC : BasePlugin
 			_exploits?.UpdateConfig(_config.Exploits);
 			_dllInjection?.UpdateConfig(_config.DllInjection);
 			_cvarScanner?.UpdateConfig(_config.CVarScanner);
+			_antiWallHack?.UpdateConfig(_config.AntiWallHack);
 		}
 	}
 
@@ -309,6 +315,7 @@ public sealed class AegisAC : BasePlugin
 		_aimlock.OnGameFrame(tick);
 		_dllInjection.OnGameFrame();
 		_cvarScanner.OnGameFrame();
+		_antiWallHack.OnGameFrame(tick);
 	}
 
 	private void OnClientDisconnected(SwiftlyS2.Shared.Events.IOnClientDisconnectedEvent e)
@@ -322,6 +329,7 @@ public sealed class AegisAC : BasePlugin
 		_exploits.ResetPlayer(e.PlayerId);
 		_dllInjection.ResetPlayer(e.PlayerId);
 		_cvarScanner.ResetPlayer(e.PlayerId);
+		_antiWallHack.ResetPlayer(e.PlayerId);
 	}
 
 	private void OnMapLoad(SwiftlyS2.Shared.Events.IOnMapLoadEvent e)
@@ -336,6 +344,7 @@ public sealed class AegisAC : BasePlugin
 		_exploits.ResetAll();
 		_dllInjection.ResetAll();
 		_cvarScanner.ResetAll();
+		_antiWallHack.ResetAll();
 	}
 
 	[GameEventHandler(HookMode.Post)]
@@ -405,6 +414,27 @@ public sealed class AegisAC : BasePlugin
 		return HookResult.Continue;
 	}
 
+		[GameEventHandler(HookMode.Post)]
+	public HookResult OnRoundStart(EventRoundStart e)
+	{
+		_antiWallHack?.OnRoundStart();
+		return HookResult.Continue;
+	}
+
+	[GameEventHandler(HookMode.Post)]
+	public HookResult OnRoundEnd(EventRoundEnd e)
+	{
+		_antiWallHack?.OnRoundEnd();
+		return HookResult.Continue;
+	}
+
+	[GameEventHandler(HookMode.Post)]
+	public HookResult OnRoundFreezeEnd(EventRoundFreezeEnd e)
+	{
+		_antiWallHack?.OnRoundStart();
+		return HookResult.Continue;
+	}
+
 	[Command("aegis_status", registerRaw: true, permission: "@css/root")]
 	[CommandAlias("aegisstatus", registerRaw: true)]
 	public void AegisStatusCommand(ICommandContext context)
@@ -425,6 +455,7 @@ public sealed class AegisAC : BasePlugin
 		context.Reply($"  Exploits    : {_exploits.Stats()}");
 		context.Reply($"  DllInjection: {_dllInjection.Stats()}");
 		context.Reply($"  CVarScanner : {_cvarScanner.Stats()}");
+		context.Reply($"  AntiWallHack: {_antiWallHack.Stats()}");
 	}
 
 	[Command("aimbot_status", registerRaw: true, permission: "@css/root")]
@@ -509,6 +540,19 @@ public sealed class AegisAC : BasePlugin
 		}
 
 		context.Reply($"[AegisAC CVarScanner] tick={CurrentTick} {_cvarScanner.Stats()}");
+	}
+
+		[Command("awh_status", registerRaw: true, permission: "@css/root")]
+	[CommandAlias("antiwallhack_status", registerRaw: true)]
+	public void AntiWallHackStatusCommand(ICommandContext context)
+	{
+		if (!_config.Debug)
+		{
+			context.Reply("[AegisAC] Debug mode is disabled.");
+			return;
+		}
+
+		context.Reply($"[AegisAC AntiWallHack] tick={CurrentTick} {_antiWallHack.Stats()}");
 	}
 
 	[Command("aegis_reload", registerRaw: true, permission: "@css/root")]
