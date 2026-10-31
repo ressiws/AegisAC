@@ -6,7 +6,7 @@
 
 # AegisAC (Aegis Anti-Cheat)
 
-**A Server-Sided Anti-Cheat for Counter-Strike 2 built with Swiflys2**
+**A Server-Sided Anti-Cheat for Counter-Strike 2 built with SwiftlyS2**
 
 [![Platform](https://img.shields.io/badge/Platform-Counter--Strike%202-blue.svg?style=for-the-badge&logo=counter-strike)](https://store.steampowered.com/app/730/CounterStrike_2/)
 [![Framework](https://img.shields.io/badge/Framework-SwiftlyS2-orange.svg?style=for-the-badge)](https://swiftlys2.net)
@@ -15,7 +15,7 @@
 
 <br/>
 
-*A high-performance, non-intrusive server-side anti-cheat built with modern C# on the SwiftlyS2 framework. Detects aim assistance, silent aim, triggerbots, wall-occluded aimlocks, sub-tick tampering, movement scripts, and injected cheat event listeners without requiring any client-side software.*
+*A high-performance, non-intrusive server-side anti-cheat built with modern C# on the SwiftlyS2 framework. Detects aim assistance, silent aim, triggerbots, wall-occluded aimlocks, sub-tick tampering, movement automation, exploits, client ConVar manipulation, injected cheat event hooks, and features real-time server-side network entity occlusion (Anti-WallHack / Fog of War) without requiring any client-side software.*
 
 ---
 
@@ -26,10 +26,11 @@
 - [Overview](#-overview)
 - [Showcase](#-showcase)
 - [Key Features](#-key-features)
+- [Architecture & Modular Design](#-architecture--modular-design)
 - [Detection Modules & Categories](#-detection-modules--categories)
   - [Category I — Aim & Trajectory Analysis (`Aimbot` & `SilentAim`)](#-category-i--aim--trajectory-analysis-aimbot--silentaim)
-  - [Category II — Reaction Timing & Wall-Tracking Analysis (`Triggerbot` & `Aimlock`)](#-category-ii--reaction-timing--wall-tracking-analysis-triggerbot--aimlock)
-  - [Category III — Protocol, Sub-Tick, Movement & Client Integrity (`AntiAim` & `DllInjection`)](#️-category-iii--protocol-sub-tick-movement--client-integrity-antiaim--dllinjection)
+  - [Category II — Reaction Timing, Wall-Tracking & Network Occlusion (`Triggerbot`, `Aimlock` & `AntiWallHack`)](#-category-ii--reaction-timing-wall-tracking--network-occlusion-triggerbot-aimlock--antiwallhack)
+  - [Category III — Protocol, Movement, Exploits & Client Integrity (`AntiAim`, `Movement`, `Exploits`, `DllInjection` & `CVarScanner`)](#️-category-iii--protocol-movement-exploits--client-integrity-antiaim-movement-exploits-dllinjection--cvarscanner)
 - [Commercial Anti-Cheat Reverse-Engineering & Mathematical Baselines](#-commercial-anti-cheat-reverse-engineering-engine-invariants--empirical-hypotheses)
 - [Quick Start](#-quick-start)
   - [Prerequisites](#prerequisites)
@@ -47,12 +48,13 @@
 
 ## 📖 Overview
 
-**AegisAC** provides servers with robust, automated detection against aimbots, silent aim, triggerbots, wall-occluded aimlocks, sub-tick manipulation, movement macros, and internal cheat event hooks in Counter-Strike 2. Unlike invasive kernel-level drivers or third-party client anti-cheats, AegisAC runs **strictly on the server**:
+**AegisAC** provides servers with robust, automated detection against aimbots, silent aim, triggerbots, wall-occluded aimlocks, sub-tick manipulation, movement macros, internal cheat event hooks, client convar tampering, and server-side wallhack occlusion in Counter-Strike 2. Unlike invasive kernel-level drivers or third-party client anti-cheats, AegisAC runs **strictly on the server**:
 
 - **Zero Client Overhead:** Players do not need to download or install background software.
 - **Sub-Tick Phase Aware:** Designed from the ground up to operate seamlessly with CS2's usercmd and sub-tick architecture.
+- **Server-Side Anti-WallHack:** Directly hooks engine entity transmission (`CheckTransmit`) to withhold occluded enemy pawns and equipment from network packets, neutralizing ESP/wallhacks entirely.
 - **Evidence-Based Sanctions:** Punishments are only executed when multiple, high-confidence evidence points are collected across a sliding time window, mitigating false positives.
-- **Extensible Architecture:** Modular design allowing server owners to select independent punishment types (`ban`, `kick`, or `none`) and granular settings for each of the **6 detection modules**.
+- **Extensible Architecture:** Modular design allowing server owners to select independent punishment types (`ban`, `kick`, or `none`) and granular settings for each of the **10 dedicated detection modules**.
 
 ---
 
@@ -103,25 +105,59 @@
 
 - **🎯 Advanced Trajectory & Angle Math:** Employs forward vector trigonometry, angular distance delta checking, and historical position reconciliation to detect instantaneous snaps and unnatural aimbot movement.
 - **🔄 Sub-Tick & Phase-Compensated Correlator:** Reliably pairs `weapon_fire` and `player_hurt` events with exact user commands, compensating for client tick gaps and engine phase shifts.
-- **⚖️ Modular Punishment System:** Configure punishments per module (`ban`, `kick`, `none`) with custom command templates supporting placeholders (`{userid}`, `{slot}`, `{steamid}`, `{name}`, `{reason}`).
+- **👁️ Server-Side Anti-WallHack (Fog of War):** Suppresses network entity transmission (`ISource2GameEntities::CheckTransmit`) for enemies occluded behind solid world geometry, neutralizing client-side ESP and radar hacks without pop-in glitches.
+- **🏃 Dedicated Movement Automation Detection:** Independent detection for bunnyhopping (hyperscroll/script), Snap-Tap / airborne Nulls (SOCD opposite-key cancellation), and AutoStrafe optimizers.
+- **🛡️ Exploits & Input Integrity:** Catches sub-tick command timestamp tampering, desubtick exploits, invalid usercmd input bits, and name-changer spam.
+- **🔍 Client ConVar Verification (CVarScanner):** Queries and verifies critical client-side console variables (`sv_cheats`, `r_drawothermodels`, `mat_wireframe`, `host_timescale`, `fog_enable`, prediction/lag-compensation cvars).
+- **⚖️ Flexible Admin & Punishment System:** Native presets for default Swiftly commands (`sw_ban #{userid}`), T3Admin (`sw_addban {steamid}`), or custom format templates with placeholders (`{userid}`, `{slot}`, `{steamid}`, `{name}`, `{reason}`).
 - **🔔 Discord Webhook Integration:** Instant, rich embed alerts dispatched asynchronously to your staff Discord channel when a player is flagged, kicked, or banned.
 - **⚡ Hot Reloading & Live Config:** Reload configurations instantaneously during live gameplay with the `aegis_reload` command without restarting the server or kicking players.
-- **🔍 Unified Diagnostic Suite:** Inspect live telemetry per module (`aegis_status`, `aimbot_status`, `silentaim_status`, `triggerbot_status`, `aimlock_status`, `antiaim_status`, `dllinjection_status`).
+- **🔍 Unified Diagnostic Suite:** Inspect live telemetry per module (`aegis_status`, `aimbot_status`, `silentaim_status`, `triggerbot_status`, `aimlock_status`, `antiaim_status`, `movement_status`, `exploits_status`, `dllinjection_status`, `cvar_status`, `awh_status`).
+
+---
+
+## 🏛️ Architecture & Modular Design
+
+AegisAC enforces a clean architectural separation between detection logic and utility helpers:
+
+- **`src/Modules/`:** Contains **strictly** the 10 dedicated detector classes:
+  - `Aimbot.cs`
+  - `SilentAim.cs`
+  - `Triggerbot.cs`
+  - `Aimlock.cs`
+  - `AntiWallHack.cs`
+  - `AntiAim.cs`
+  - `Movement.cs`
+  - `Exploits.cs`
+  - `DllInjection.cs`
+  - `CVarScanner.cs`
+- **`src/Utils/`:** Houses all reusable geometric math, network monitors, unmanaged engine hooks, and visibility tracers:
+  - `AimMath.cs` — Trigonometry, geodesic angular distances, and Vanguard/Overwatch baselines.
+  - `NetworkSafetyMonitor.cs` — Sliding-window latency, jitter, loss, and choke tracking to prevent false flags during network lag.
+  - `Utils.cs` — Logging, console styling, chat printing, and debug helpers.
+  - `AntiWallHack/CornerPredictor.cs` — Predictive corner-peeking velocity and directional input lead calculator.
+  - `AntiWallHack/OcclusionTracer.cs` — 12-sample ray tracing engine with previous-hit caching and per-tick trace budgets.
+  - `AntiWallHack/TransmitHook.cs` — Unmanaged vtable hook for `ISource2GameEntities::CheckTransmit` and mask bit twiddling.
+  - `AntiWallHack/VisibilityTracker.cs` — Player snapshot builder, scene node & equipment bundle aggregator, and grace period smoothing.
 
 ---
 
 ## 🛡️ Detection Modules & Categories
 
-AegisAC is structured into **3 distinct detection categories** comprising **6 dedicated server-side modules**:
+AegisAC is structured into **3 distinct categories** comprising **10 dedicated server-side modules**:
 
-| Category | Module (`src/Modules/`) | Config Section | Status Command | Primary Detections |
+| Category | Module (`src/Modules/`) | Config Section | Status Command | Primary Detections / Actions |
 | :--- | :--- | :--- | :--- | :--- |
 | **🎯 I. Aim & Trajectory** | [`Aimbot.cs`](src/Modules/Aimbot.cs) | `Aimbot` | `aimbot_status` | `AIMBOT` (Snap, Smooth, Laser), `RCS_MACRO`, `INHUMAN_ACCURACY`, `IRREGULAR_BEHAVIOR`, `DOUBLETAP` |
 | **🎯 I. Aim & Trajectory** | [`SilentAim.cs`](src/Modules/SilentAim.cs) | `SilentAim` | `silentaim_status` | `SILENT_AIM` (Sub-Tick Desync + Geodesic Path Filter), `SNAP_RETURN` |
 | **⚡ II. Reaction & Tracking** | [`Triggerbot.cs`](src/Modules/Triggerbot.cs) | `Triggerbot` | `triggerbot_status` | `TRIGGERBOT` (`TargetDriven` & `AimDriven` + Variance), `SYNTHETIC_INPUT` |
 | **⚡ II. Reaction & Tracking** | [`Aimlock.cs`](src/Modules/Aimlock.cs) | `Aimlock` | `aimlock_status` | `AIMLOCK` (Wall-Occluded 64-Tick Hull Adherence) |
-| **🛡️ III. Protocol & Client Integrity** | [`AntiAim.cs`](src/Modules/AntiAim.cs) | `AntiAim` | `antiaim_status` | `ANTI_UNTRUSTED`, `Spinbot`, `Yaw Jitter`, `Subtick Tamper`, `Invalid Input`, `Desubtick`, `AutoStrafe`, `Bhop`, `Nulls`, `NameChanger` |
-| **🛡️ III. Protocol & Client Integrity** | [`DllInjection.cs`](src/Modules/DllInjection.cs) | `DllInjection` | `dllinjection_status` | `DLL Injection` (117 Blacklisted Client Game Event Subscriptions) |
+| **⚡ II. Reaction & Tracking** | [`AntiWallHack.cs`](src/Modules/AntiWallHack.cs) | `AntiWallHack` | `awh_status` | **Server-Side Entity Occlusion (Fog of War)**: Suppresses network packets for occluded enemies & weapons |
+| **🛡️ III. Protocol & Integrity** | [`AntiAim.cs`](src/Modules/AntiAim.cs) | `AntiAim` | `antiaim_status` | `ANTI_UNTRUSTED` (pitch/roll/finite), `Spinbot` (3-tier rate), `Yaw Jitter Anti-Aim` |
+| **🛡️ III. Protocol & Integrity** | [`Movement.cs`](src/Modules/Movement.cs) | `Movement` | `movement_status` | `Bhop` (consecutive frame-perfect landings), `Nulls` (SOCD / Snap-Tap 0.00ms switch), `AutoStrafe` |
+| **🛡️ III. Protocol & Integrity** | [`Exploits.cs`](src/Modules/Exploits.cs) | `Exploits` | `exploits_status` | `Subtick Tamper` (non-monotonic timestamps), `Desubtick`, `Invalid Input` bits, `NameChanger` |
+| **🛡️ III. Protocol & Integrity** | [`DllInjection.cs`](src/Modules/DllInjection.cs) | `DllInjection` | `dllinjection_status` | `DLL Injection` (117 Blacklisted Client Game Event Subscriptions) |
+| **🛡️ III. Protocol & Integrity** | [`CVarScanner.cs`](src/Modules/CVarScanner.cs) | `CVarScanner` | `cvar_status` | `CVar Manipulation` (`sv_cheats`, `r_drawothermodels`, `mat_wireframe`, `host_timescale`, `fog_enable`, etc.) |
 
 ---
 
@@ -156,17 +192,6 @@ The Aimbot detector inspects user commands, view angles, weapon fire correlation
 5. **Rapid-Fire / Doubletap Detection (`DOUBLETAP`)**
    - **How it works:** Verifies consecutive `weapon_fire` tick intervals against theoretical minimum weapon cycle times per weapon, gated by `NetworkSafetyMonitor` to ignore packet-burst artifacts.
 
-#### Strictness Rating
-
-| Metric | Setting / Behavior |
-| :--- | :--- |
-| **Strictness Level** | **Conservative (High Precision + Blatant Instant Gate)** |
-| **Evidence Window** | 5 Minutes (Sliding, Persisted Across Reconnects by SteamID64) |
-| **Evidence Threshold** | 3 Verified Damaging Incidents required (1 for Blatant Rage Snap $\ge 90^\circ$ or Laser $\ge 99\%$) |
-| **Damage Gate** | Active — shots that miss or do zero damage never accumulate incident counts |
-| **Distance Gate** | Active — point-blank combat (< 100 units) is excluded from snap calculation |
-| **False-Positive Profile** | Highly resilient against legitimate high-sensitivity flicks and swipe resets |
-
 </details>
 
 <details open>
@@ -189,10 +214,10 @@ Dedicated module separating sub-tick angle desynchronization and post-shot snap-
 
 ---
 
-### ⚡ Category II — Reaction Timing & Wall-Tracking Analysis (`Triggerbot` & `Aimlock`)
+### ⚡ Category II — Reaction Timing, Wall-Tracking & Network Occlusion (`Triggerbot`, `Aimlock` & `AntiWallHack`)
 
 > [!IMPORTANT]
-> **Category II Focus:** Combines native physics raycasts (`MaskTrace.Solid`), anatomical 3-sphere hitbox hulls, smoke volume slab tests, and sub-tick timing variance to detect triggerbots, synthetic clickers, and wall-occluded aimlocks.
+> **Category II Focus:** Combines native physics raycasts (`MaskTrace.Solid`), anatomical 3-sphere hitbox hulls, smoke volume slab tests, sub-tick timing variance, and server-side packet transmission masks to detect triggerbots, wall-tracking aimlocks, and suppress client-side ESP entirely.
 
 <details open>
 <summary><b>Module 3: Triggerbot &amp; Synthetic Input Detection (<code>src/Modules/Triggerbot.cs</code>)</b></summary>
@@ -212,18 +237,6 @@ The Triggerbot detector inspects real-time crosshair raycast targeting, sub-tick
 3. **Smoke, Line-of-Sight & Network Safety Gates**
    - **World Visibility Gate:** Performs targeted line-of-sight checks against world geometry (`MaskTrace.Solid`) at both target acquisition and `player_hurt` resolution.
    - **Smoke & Network Safety:** Automatically discards shots through active smoke volumes and defers timing-sensitive scoring during high ping (`≥ 150ms`), jitter (`≥ 25ms`), packet loss/choke (`≥ 2%`), or command bursts via `NetworkSafetyMonitor`.
-
-#### Strictness Rating
-
-| Metric | Setting / Behavior |
-| :--- | :--- |
-| **Strictness Level** | **Conservative (Bounded Decaying Score + Variance)** |
-| **Evidence Window** | 5 Minutes (Sliding, with normal-reaction decay) |
-| **Evidence Threshold** | 4 Verified Incidents (`10.0` rolling points) |
-| **Max Command Delta** | ≤ 90ms (~5-6 Ticks at 64-tick, up to 8 ticks under zero-variance macro cadence) |
-| **Damage Gate** | Active — evaluated strictly upon confirmed `player_hurt` events |
-| **Line-of-Sight Gate** | Active — candidates verified against world geometry (`MaskTrace.Solid`) |
-| **Smoke & Network Gate** | Active — ray-box smoke exclusion + `NetworkSafetyMonitor` veto |
 
 </details>
 
@@ -246,46 +259,90 @@ The Aimlock detector analyzes sustained crosshair adherence through solid world 
    - **Distance Gate:** Point-blank interactions (< 150 units) are excluded to prevent false triggers during close-quarters collisions.
    - **Target Traversal Gate:** Requires the enemy to have moved at least 128 units across the player's visual field to eliminate false positives on stationary corner-holding.
 
-#### Strictness Rating
+</details>
 
-| Metric | Setting / Behavior |
-| :--- | :--- |
-| **Strictness Level** | **Conservative (Wall-Occlusion Enforced)** |
-| **Evidence Window** | 5 Minutes (Sliding) |
-| **Evidence Threshold** | 3 Verified Tracking Incidents required |
-| **Tracking Window** | 1.0 Second (`64` strictly observed ticks at 64-tick) |
-| **Hull Coverage** | ≥ 95% on-target consistency (≥ 70% occluded behind walls) |
-| **Min Target Travel** | > 128.0 units (~4 player widths) |
+<details open>
+<summary><b>Module 5: Server-Side Anti-WallHack / Network Occlusion (<code>src/Modules/AntiWallHack.cs</code>)</b></summary>
+<br/>
+
+Server-side entity transmission occlusion (Fog of War) that actively neutralizes client-side ESP, wallhacks, and radar cheats without needing any client software.
+
+#### Methods & Mechanics
+
+1. **Unmanaged Engine CheckTransmit Hook**
+   - **How it works:** Intercepts `CSource2GameEntities::CheckTransmit` on the server virtual table. Manipulates `primaryMask` and `dontTransmitMask` bit arrays to withhold enemy pawn entities from network packets sent to clients who have no direct line-of-sight.
+2. **Multi-Sample 12-Ray Bounding Hull Tracing**
+   - **How it works:** Verifies line of sight across 12 critical sample points per target: eye, torso/center of mass, 8 padded bounding box corners, and 2 forward weapon/hip vectors. Employs preferred-sample caching (testing the clear ray from the prior tick first) and per-tick trace budgets (`MaxTracesPerTick = 2048`) to ensure 0% server tickrate degradation.
+3. **Corner-Peek Prediction & Grace Period Smoothing**
+   - **How it works:** Projects viewer eye positions along forward/strafe velocity vectors and movement button inputs (`CornerPredictionSeconds = 0.12s`) to ensure enemies around corners are transmitted before a peeker appears. Maintains `VisibleGraceTicks = 12` ticks of transmission after line-of-sight is broken to prevent visual flickering.
+4. **Complete Entity Bundling**
+   - **How it works:** Collects player pawns, scene node hierarchy children (`CGameSceneNode`), and equipped/carried weapons (`CEconEntity`) so no floating weapons or model attachments leak to ESP cheats.
 
 </details>
 
 ---
 
-### 🛡️ Category III — Protocol, Sub-Tick, Movement & Client Integrity (`AntiAim` & `DllInjection`)
+### 🛡️ Category III — Protocol, Movement, Exploits & Client Integrity (`AntiAim`, `Movement`, `Exploits`, `DllInjection` & `CVarScanner`)
 
 > [!IMPORTANT]
-> **Category III Focus:** Enforces deterministic Source 2 engine invariants on viewangles, `CSubtickMoveStep` protobuf steps, airborne movement physics, and client-side `IGameEventManager2` event subscriptions.
+> **Category III Focus:** Enforces deterministic Source 2 engine invariants on viewangles, `CSubtickMoveStep` protobuf steps, airborne movement physics, client-side ConVar values, and client-side `IGameEventManager2` event subscriptions.
 
 <details open>
-<summary><b>Module 5: Anti-Aim, Sub-Tick &amp; Movement Integrity Detection (<code>src/Modules/AntiAim.cs</code>)</b></summary>
+<summary><b>Module 6: Anti-Aim &amp; Spinbot Detection (<code>src/Modules/AntiAim.cs</code>)</b></summary>
 <br/>
 
-Validates usercmd protocol invariants, sub-tick step integrity, spinbots, and automated movement scripts.
+Validates viewangle limits, spinbots, and rapid angular jitter mechanics.
 
 #### Detection Methods
 
-1. **Anti-Untrusted & Sub-Tick Tamper (`ANTI_UNTRUSTED`, `Subtick Tamper`, `Invalid Input`, `Desubtick`)**
-   - **How it works:** Deterministically validates viewangles (`pitch` $\in [-89^\circ, +89^\circ]$, `roll` $\approx 0^\circ$, finite `NaN`/`Inf` check with a 60s alert latch), verifies `CSubtickMoveStep` fraction ordering across explicit button transitions, detects `Invalid Input` button state mismatches (`Buttonstate2 | Buttonstate3` vs `subtick_moves`), and catches `Desubtick` cheats flattening fractional timestamps to `0.0`.
+1. **Anti-Untrusted Angles (`ANTI_UNTRUSTED`)**
+   - **How it works:** Deterministically flags invalid pitch angles outside $[-89.0^\circ, +89.0^\circ]$, roll angles exceeding $50.0^\circ$ (with a damage/recoil safety margin), and non-finite `NaN`/`Inf` angles.
 2. **Multi-Tier Spinbot & Yaw Jitter (`Spinbot`, `Yaw Jitter Anti-Aim`)**
    - **How it works:** Detects continuous non-combat yaw rotation across 3 tiers (`720°/s`, `1440°/s`, `2880°/s` with $\ge 90\%$ directional consistency) and rapid alternating yaw jitter flips ($\ge 65^\circ$).
-3. **Movement Automation (`AutoStrafe`, `Bhop`, `Nulls`, `NameChanger`)**
-   - **How it works:** Detects airborne strafe optimizers (`YawAccelPercent > 90%`), consecutive frame-perfect bunnyhop landings (`BhopStreakThreshold = 10`), consecutive airborne `0.00ms` opposite-direction switches (`NullsStreakThreshold = 64`), and rapid name-spamming scripts (`NameChanger`).
 
 </details>
 
 <details open>
-<summary><b>Module 6: Client Event Subscription / DLL Injection Detection (<code>src/Modules/DllInjection.cs</code>)</b></summary>
+<summary><b>Module 7: Movement Automation Detection (<code>src/Modules/Movement.cs</code>)</b></summary>
 <br/>
+
+Specialized detection for bunnyhop macros/scripts, Snap-Tap / airborne Nulls, and AutoStrafe optimizers.
+
+#### Detection Methods
+
+1. **Bunnyhop Hyperscroll & Macro Detection (`Bhop`)**
+   - **How it works:** Analyzes ground contact states, tick intervals, and `IN_JUMP` buttons. Flags consecutive frame-perfect single-tick jumps when landing (`BhopStreakThreshold = 10`), ignoring legitimate manual scroll-wheel inputs with multi-tick spreads.
+2. **Airborne Nulls / Snap-Tap SOCD Detection (`Nulls`)**
+   - **How it works:** Analyzes opposite horizontal directional transitions (`IN_MOVELEFT` $\leftrightarrow$ `IN_MOVERIGHT`). Detects automated hardware/software SOCD cancellations where opposite-direction switches occur at instantaneous `0.00ms` latency without release overlap over consecutive airborne strafes (`NullsStreakThreshold = 64`).
+3. **AutoStrafe & Strafe Optimizer Detection (`AutoStrafe`)**
+   - **How it works:** Correlates viewangle yaw acceleration against airborne lateral velocity gains to detect mathematical strafe synchronization exceeding human coordination limits (`YawAccelPercent > 90%`).
+
+</details>
+
+<details open>
+<summary><b>Module 8: Exploits &amp; Input Integrity Detection (<code>src/Modules/Exploits.cs</code>)</b></summary>
+<br/>
+
+Guards against protocol-level tampering, usercmd sub-tick manipulation, and exploit scripts.
+
+#### Detection Methods
+
+1. **Sub-Tick Timestamp Tampering (`Subtick Tamper`)**
+   - **How it works:** Enforces monotonic sub-tick timestamp ordering in `CSubtickMoveStep` protobuf data. Flags commands where fractional timestamps decrease or step backwards in time.
+2. **Desubtick Exploit Detection (`Desubtick`)**
+   - **How it works:** Identifies third-party desubtick scripts and binds that strip fractional sub-tick precision, forcing all button actions to clamp artificially to `0.0`.
+3. **Invalid Input Bitmasks (`Invalid Input`)**
+   - **How it works:** Validates consistency between command button bitmasks (`buttonstate1`, `buttonstate2`, `buttonstate3`) and registered sub-tick actions.
+4. **Name-Changer Spam (`NameChanger`)**
+   - **How it works:** Detects malicious automated scripts rapidly changing player names to flood server logs or impersonate administrators.
+
+</details>
+
+<details open>
+<summary><b>Module 9: Client Event Subscription / DLL Injection Detection (<code>src/Modules/DllInjection.cs</code>)</b></summary>
+<br/>
+
+Scans for injected internal cheat modules hooking engine event dispatchers.
 
 #### Detection Methods
 
@@ -294,15 +351,22 @@ Validates usercmd protocol invariants, sub-tick step integrity, spinbots, and au
 
 </details>
 
----
-
-### 🗺️ Planned Modules (Roadmap)
-
-<details>
-<summary><b>Future Roadmap (Click to expand)</b></summary>
+<details open>
+<summary><b>Module 10: Client ConVar Verification (<code>src/Modules/CVarScanner.cs</code>)</b></summary>
 <br/>
 
-- **Dormant ESP / Server-Side Visibility Culling:** Suppresses network transmission of dormant enemy player pawns behind walls. *(Strictness: Active Mitigation)*
+Verifies critical client-side console variables to prevent client-side visual and physics exploits.
+
+#### Detection Methods
+
+1. **Client ConVar Query Verification (`CVar Manipulation`)**
+   - **How it works:** Queries client cvars via SwiftlyS2 query mechanisms on a periodic schedule (`InitialScanDelaySeconds = 15s`, `ScanIntervalSeconds = 90s`). Verifies:
+     - `sv_cheats` — Ensures client has not forced bypass of cheat flags.
+     - `r_drawothermodels` — Prevents client-side built-in wallhacks (`r_drawothermodels 2`).
+     - `mat_wireframe` — Prevents client-side wireframe geometry rendering.
+     - `host_timescale` — Prevents client speedhacking/timescale alteration.
+     - `fog_enable` — Prevents client-side smoke and fog removal.
+     - `cl_predict` & `cl_lagcompensation` — Verifies prediction integrity.
 
 </details>
 
@@ -310,7 +374,7 @@ Validates usercmd protocol invariants, sub-tick step integrity, spinbots, and au
 
 ## 🔬 Commercial Anti-Cheat Reverse-Engineering, Engine Invariants & Empirical Hypotheses
 
-AegisAC formalizes all **8 reverse-engineered Riot Vanguard & Blizzard Overwatch metrics** in [`AimMath.Baselines`](src/Modules/AimMath.cs) alongside verified CS2 engine invariants:
+AegisAC formalizes all **8 reverse-engineered Riot Vanguard & Blizzard Overwatch metrics** in [`AimMath.Baselines`](src/Utils/AimMath.cs) alongside verified CS2 engine invariants:
 
 | Metric / Gate | Threshold (`AimMath.Baselines`) | AegisAC Implementation & Calibration | Detection Target |
 | :--- | :--- | :--- | :--- |
@@ -322,10 +386,7 @@ AegisAC formalizes all **8 reverse-engineered Riot Vanguard & Blizzard Overwatch
 | **`PREDICTION_TRESHOLD`** | **`> 95.0%` accuracy (`0.95`)** | **Hull Coverage & Inhuman Accuracy:** Enforces $\ge 95\%$ on-target hull coverage for wall-occluded `Aimlock` episodes and flags $\ge 95\%$ hit accuracy across $\ge 35$ aimed combat shots at $\ge 100\text{u}$ (`INHUMAN_ACCURACY`). | Aimbot / Aimlock (`Aimlock.cs`, `Aimbot.cs`) |
 | **`RECOIL_TRESHOLD`** | **`< 0.80` comp (`80%`)** | **Spray Recoil Compensation Gate:** Evaluates $\ge 8$-shot automatic rifle/SMG sprays where vertical pull-down compensation meets $\ge 80\%$ of expected recoil envelope combined with robotic pattern uniformity. | RCS / No-Recoil (`Aimbot.cs`) |
 | **`PATTERN_VARIANCE`** | **`< 8.157%` (`CV < 0.08157`)** | **Relative Step Coefficient of Variation Gate:** Active across `EvaluateSprayRecoilPattern` (`RCS_MACRO`), `SmoothConvergence` (`AIMBOT`), and `EvaluateShotPoints` (`TRIGGERBOT`) whenever relative step CV falls below `8.157%`. | Pattern Detection (`Aimbot.cs`, `Triggerbot.cs`) |
-| **`ANTI_UNTRUSTED` & `SubtickMoves`** | **Verified CS2 Engine Invariant** | Clamps pitch to $[-89.0^\circ, +89.0^\circ]$, roll to $0.0^\circ$, validates `CSubtickMoveStep` monotonic button ordering, and scans **117 blacklisted client game events** (`DLL Injection`). | Anti-Aim / Subtick / DLL Injection (`AntiAim.cs`, `DllInjection.cs`) |
-
-> [!TIP]
-> **Why this matters**: While client-side kernel anti-cheats inspect client memory directly, **AegisAC combines deterministic CS2 protocol invariants with bounded, network-gated behavioral scoring 100% server-side**, preserving player privacy and server stability.
+| **`ANTI_UNTRUSTED` & `SubtickMoves`** | **Verified CS2 Engine Invariant** | Clamps pitch to $[-89.0^\circ, +89.0^\circ]$, roll to $50.0^\circ$, validates `CSubtickMoveStep` monotonic button ordering, and scans **117 blacklisted client game events** (`DLL Injection`). | Anti-Aim / Subtick / DLL Injection (`AntiAim.cs`, `DllInjection.cs`) |
 
 ---
 
@@ -339,7 +400,7 @@ AegisAC formalizes all **8 reverse-engineered Riot Vanguard & Blizzard Overwatch
 
 ### Installation
 
-1. Download the latest release `.zip` from the [Releases](https://github.com/swisser/AegisAC/releases) page.
+1. Download the latest release `.zip` from the [Releases](https://github.com/ressiws/AegisAC/releases) page.
 2. Extract the archive into your server's plugin directory:
    ```
    game/csgo/addons/swiftlys2/plugins/AegisAC/
@@ -356,13 +417,13 @@ To compile the plugin and run the unit test suite locally:
 
 ```bash
 # Clone the repository
-git clone https://github.com/swisser/AegisAC.git
+git clone https://github.com/ressiws/AegisAC.git
 cd AegisAC
 
 # Build in Release configuration
 dotnet build -c Release
 
-# Run the deterministic xUnit test suite
+# Run the deterministic xUnit test suite (47 tests)
 dotnet test tests/AegisAC.Tests/AegisAC.Tests.csproj -c Release
 
 # Package and publish
@@ -383,58 +444,55 @@ AegisAC configurations are stored in `addons/swiftlys2/configs/plugins/AegisAC/c
     // Unique server identifier included in Discord alerts and logs.
     "ServerId": "cs2-server-1",
 
-    // Global debug mode for Aegis Anti-Cheat. Enables verbose diagnostic logs and status commands.
+    // Global debug mode for Aegis Anti-Cheat. Enables diagnostic console messages and in-game status commands.
     "Debug": false,
 
-    // Command executed when kicking a player.
-    // Available placeholders: {userid}, {slot}, {steamid}, {name}, {reason}
+    // Admin ban system preset: 'Default' (sw_ban #{userid}), 'T3Admin' (sw_addban {steamid}), or 'Custom' (uses BanCommand / KickCommand).
+    "AdminSystem": "Default",
+
+    // Server console command template executed for kicking. Available placeholders: {userid}, {slot}, {steamid}, {name}, {reason}.
     "KickCommand": "sw_kick #{userid} \"[AegisAC] {reason}\"",
 
-    // Command executed when banning a player.
-    // Available placeholders: {userid}, {slot}, {steamid}, {name}, {reason}
-    "BanCommand": "sw_ban #{userid} 0 \"[AegisAC] {reason}\"; kickid {userid} \"[AegisAC] {reason}\"",
+    // Server console command template executed for banning when AdminSystem is 'Custom'. Available placeholders: {userid}, {slot}, {steamid}, {name}, {reason}.
+    "BanCommand": "sw_ban #{userid} 0 \"[AegisAC] {reason}\"",
 
     // 1. Aimbot, RCS, Doubletap, Inhuman Accuracy & Irregular Behavior module
     "Aimbot": {
       "Enabled": true,
-      "Punishment": "none",
+      "Punishment": "None",
       "TeammatesAreEnemies": false,
       "SnapAngleThreshold": 26.0,
       "SmoothMinimumMovement": 12.0,
       "LowFovSmoothMinimumMovement": 3.5,
       "SmoothMinimumPathEfficiency": 0.96,
-      "EnableRcsCheck": true,
-      "EnableInhumanAccuracyCheck": true,
-      "EnableIrregularBehaviorCheck": true,
-      "EnableDoubletap": true
+      "EnableSilentAim": true,
+      "EnableDoubletap": true,
+      "EnableAntiAim": true
     },
 
     // 2. Dedicated Silent Aim & Post-Shot Snap-Return module
     "SilentAim": {
       "Enabled": true,
-      "Punishment": "none",
+      "Punishment": "None",
       "ScoreThreshold": 10.0,
       "EnableSubtickSilentAim": true,
-      "EnableSnapReturn": true,
-      "SnapReturnMinimumAngle": 6.0,
-      "SnapReturnMaximumSurroundingAngle": 3.5
+      "EnableSnapReturn": true
     },
 
     // 3. Triggerbot & Synthetic Input module
     "Triggerbot": {
       "Enabled": true,
-      "Punishment": "none",
+      "Punishment": "None",
       "EvidenceThreshold": 4,
       "MaxReactionTimeMs": 90.0,
       "EnableNativeTrace": true,
-      "EnableSyntheticInputCheck": true,
       "EnableSmokeCheck": true
     },
 
     // 4. Aimlock (Wall-Occluded Tracking) module
     "Aimlock": {
       "Enabled": true,
-      "Punishment": "none",
+      "Punishment": "None",
       "EvidenceThreshold": 3,
       "TrackingDurationSeconds": 1.0,
       "MinimumDistance": 150.0,
@@ -442,32 +500,76 @@ AegisAC configurations are stored in `addons/swiftlys2/configs/plugins/AegisAC/c
       "RequireWallOcclusion": true
     },
 
-    // 5. Anti-Aim, Spinbot, Sub-Tick Integrity & Movement Automation module
+    // 5. Anti-Aim & Spinbot module
     "AntiAim": {
       "Enabled": true,
-      "Punishment": "none",
+      "Punishment": "None",
       "EnableUntrustedCheck": true,
-      "EnableSpinbotCheck": true,
-      "EnableSubtickIntegrityCheck": true,
-      "EnableDesubtickCheck": true,
-      "EnableMovementChecks": true,
-      "EnableNameChangerCheck": true,
-      "BhopStreakThreshold": 10,
-      "NullsStreakThreshold": 64
+      "EnableSpinbotCheck": true
     },
 
-    // 6. Client Event Subscription (DLL Injection) scanner module
+    // 6. Movement Automation (Bhop, Nulls / Snap-Tap, AutoStrafe) module
+    "Movement": {
+      "Enabled": true,
+      "Punishment": "None",
+      "EnableBhopCheck": true,
+      "BhopStreakThreshold": 10,
+      "EnableNullsCheck": true,
+      "NullsStreakThreshold": 64,
+      "EnableAutoStrafeCheck": true
+    },
+
+    // 7. Exploits & Input Integrity (Subtick Tamper, Desubtick, Invalid Input, NameChanger) module
+    "Exploits": {
+      "Enabled": true,
+      "Punishment": "None",
+      "EnableSubtickTamperCheck": true,
+      "EnableDesubtickCheck": true,
+      "EnableInvalidInputCheck": true,
+      "EnableNameChangerCheck": true
+    },
+
+    // 8. Client Event Subscription (DLL Injection) scanner module
     "DllInjection": {
       "Enabled": true,
-      "Punishment": "none",
+      "Punishment": "None",
       "InitialScanDelaySeconds": 10.0,
       "ScanIntervalSeconds": 120.0
+    },
+
+    // 9. Client ConVar verification (CVarScanner) module
+    "CVarScanner": {
+      "Enabled": true,
+      "Punishment": "None",
+      "InitialScanDelaySeconds": 15.0,
+      "ScanIntervalSeconds": 90.0,
+      "CheckDrawOtherModels": true,
+      "CheckMatWireframe": true,
+      "CheckSvCheats": true,
+      "CheckHostTimescale": true,
+      "CheckFogEnable": true,
+      "CheckPredictionAndLagComp": true
+    },
+
+    // 10. Server-Side Anti-WallHack (Fog of War) module
+    "AntiWallHack": {
+      "Enabled": true,
+      "CornerPrediction": true,
+      "CornerPredictionSeconds": 0.12,
+      "VisibleGraceTicks": 12,
+      "MaxTracesPerTick": 2048
+    },
+
+    // Incident telemetry & demo proof JSON dump configuration
+    "Telemetry": {
+      "DumpIncidents": true,
+      "IncidentsDirectory": "logs/aegisac/incidents"
     },
 
     // Discord webhook notifications
     "Discord": {
       "Enabled": false,
-      "WebhookUrl": "https://discord.com/api/webhooks/YOUR_WEBHOOK_URL_HERE"
+      "WebhookUrl": ""
     }
   }
 }
@@ -481,14 +583,18 @@ All commands can be executed via the server console or in-game by authorized adm
 
 | Command | Aliases | Permission | Description |
 | :--- | :--- | :--- | :--- |
-| `aegis_reload` | `aegisreload` | `@css/root` | Reloads `config.jsonc` dynamically across all 6 modules without restarting the server. |
-| `aegis_status` | `aegisstatus` | `@css/root` | Prints a unified real-time telemetry summary of all 6 detection modules (`Debug: true`). |
+| `aegis_reload` | `aegisreload` | `@css/root` | Reloads `config.jsonc` dynamically across all 10 modules without restarting the server. |
+| `aegis_status` | `aegisstatus` | `@css/root` | Prints a unified real-time telemetry summary of all 10 detection modules (`Debug: true`). |
 | `aimbot_status` | — | `@css/root` | Prints real-time `AimbotDetector` statistics, command correlation, and buffers (`Debug: true`). |
 | `silentaim_status` | — | `@css/root` | Prints real-time `SilentAimDetector` sub-tick and snap-return counters (`Debug: true`). |
 | `triggerbot_status` | — | `@css/root` | Prints real-time `TriggerbotDetector` statistics and active smoke volumes (`Debug: true`). |
 | `aimlock_status` | — | `@css/root` | Prints real-time `AimlockDetector` statistics and wall-tracking sessions (`Debug: true`). |
-| `antiaim_status` | — | `@css/root` | Prints real-time `AntiAimDetector` untrusted, spinbot, sub-tick, and movement counters (`Debug: true`). |
+| `antiaim_status` | — | `@css/root` | Prints real-time `AntiAimDetector` untrusted, spinbot, and jitter counters (`Debug: true`). |
+| `movement_status` | — | `@css/root` | Prints real-time `MovementDetector` Bhop, Nulls, and AutoStrafe counters (`Debug: true`). |
+| `exploits_status` | — | `@css/root` | Prints real-time `ExploitsDetector` subtick tamper, desubtick, and input integrity counters (`Debug: true`). |
 | `dllinjection_status` | — | `@css/root` | Prints real-time `DllInjectionDetector` event blacklist scan counters (`Debug: true`). |
+| `cvar_status` | — | `@css/root` | Prints real-time `CVarScannerDetector` client console variable verification counters (`Debug: true`). |
+| `awh_status` | `antiwallhack_status` | `@css/root` | Prints real-time `AntiWallHackDetector` occluded pairs, trace budgets, and hook status (`Debug: true`). |
 
 ---
 
@@ -519,7 +625,7 @@ AegisAC features native **Discord Components V2** webhook alerts with structured
 │ 3. 123.28° sudden move (18.40° → 0.81°)                │
 │ ────────────────────────────────────────────────────── │
 │ AEGIS ANTI-CHEAT FOR CS2 · SERVER-SIDED PROTECTION     │
-└────────────────────────────────────────────────────────┘
+│ └──────────────────────────────────────────────────────┘
 ```
 
 - **Non-blocking:** Embeds are dispatched in an asynchronous background worker pool, guaranteeing zero frame drops or lag spikes on the game thread.
@@ -563,19 +669,19 @@ CS2 usercmds include historical attack viewangles and sub-tick timestamps. Aegis
 <details>
 <summary><b>Can legitimate players with high DPI or flick aim get false-banned?</b></summary>
 <br/>
-No. AegisAC requires **3 separate damaging incidents within a 5-minute window** to trigger a punishment. Random fast flicks or crosshair adjustments that do not resolve into unnatural single-tick hitbox convergence accompanied by confirmed damage are filtered out.
+No. AegisAC requires **multiple verified damaging incidents within a sliding window** to trigger an automatic sanction (unless a blatant ragebot snap $\ge 90^\circ$ occurs). High-DPI micro-movements and swipe resets are filtered by trajectory curvature analysis and network safety gates.
 </details>
 
 <details>
 <summary><b>Can I test detections without automatically banning players?</b></summary>
 <br/>
-Yes! Simply set `"Punishment": "none"` in your `config.jsonc`. Detections will still be announced in the console and sent to your Discord webhook without taking action against the player.
+Yes! Simply set `"Punishment": "None"` in your `config.jsonc`. Detections will still be announced in the console and sent to your Discord webhook without taking action against the player.
 </details>
 
 <details>
 <summary><b>Does AegisAC cause server lag or drop tick rate?</b></summary>
 <br/>
-No. All player command buffers and position frames are stored in fixed-size circular arrays, and computationally heavy operations (such as HTTP Discord webhooks) run completely off the game thread.
+No. All player command buffers, position frames, and ray tracing operations have hard per-tick budgets (`MaxTracesPerTick = 2048`). Network transmission checks use unmanaged memory masks, and heavy operations (such as HTTP Discord webhooks) run completely off the game thread.
 </details>
 
 ---
@@ -587,8 +693,8 @@ Contributions, bug reports, and suggestions are welcome!
 1. **Reporting Issues:** If you encounter unexpected behavior or want to suggest an improvement, please open an issue on the GitHub Issues page.
 2. **Submitting Pull Requests:**
    - Fork the repository and create your feature branch: `git checkout -b feature/my-feature`.
-   - Maintain the existing code style: **C# 13**, strictly in **English**, with meaningful docstrings and zero unnecessary comments.
-   - Verify that your changes build cleanly with `dotnet build`.
+   - Maintain the existing code style: **C# 13 / .NET 10**, strictly in **English**, with meaningful docstrings and zero unnecessary comments.
+   - Verify that your changes build cleanly with `dotnet build` and pass all unit tests with `dotnet test`.
    - Commit and submit a Pull Request describing your modifications.
 
 ---

@@ -14,7 +14,6 @@ using SwiftlyS2.Shared.Natives;
 using SwiftlyS2.Shared.ProtobufDefinitions;
 using AegisAC.Configuration;
 using AegisAC.Modules;
-using AegisAC.Modules.AntiWallHack;
 using AegisAC.Notifications;
 using AegisAC.Punishment;
 using AegisAC.Telemetry;

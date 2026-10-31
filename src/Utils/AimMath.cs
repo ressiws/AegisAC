@@ -23,7 +23,7 @@ using System.Runtime.CompilerServices;
 using SwiftlyS2.Shared.Natives;
 using SwiftlyS2.Shared.Players;
 
-namespace AegisAC;
+namespace AegisAC.Utilities;
 
 internal sealed class SyntheticPlayerState
 {

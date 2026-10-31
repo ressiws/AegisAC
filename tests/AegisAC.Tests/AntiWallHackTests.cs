@@ -1,7 +1,9 @@
 using System;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using AegisAC.Modules.AntiWallHack;
+using AegisAC.Modules;
+using AegisAC.Utilities;
+using AegisAC.Utilities.AntiWallHack;
 using Xunit;
 
 namespace AegisAC.Tests;

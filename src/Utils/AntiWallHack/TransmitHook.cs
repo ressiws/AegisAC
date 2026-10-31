@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using SwiftlyS2.Shared;
 using SwiftlyS2.Shared.Memory;
 
-namespace AegisAC.Modules.AntiWallHack;
+namespace AegisAC.Utilities.AntiWallHack;
 
 /// <summary>
 /// Hooks Source 2's CheckTransmit on CSource2GameEntities to withhold network packets

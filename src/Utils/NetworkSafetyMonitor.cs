@@ -25,7 +25,7 @@ using System.Collections.Generic;
 using SwiftlyS2.Shared.Engine;
 using SwiftlyS2.Shared.Players;
 
-namespace AegisAC.Modules;
+namespace AegisAC.Utilities;
 
 internal readonly record struct NetworkSafetySample(
 	DateTime Time,

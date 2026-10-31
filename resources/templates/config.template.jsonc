@@ -1,0 +1,134 @@
+{
+  "AegisAC": {
+    // Unique identifier for this server instance in Discord alerts and logs.
+    "ServerId": "cs2-server-1",
+
+    // Global debug mode for Aegis Anti-Cheat. Enables diagnostic console messages and in-game debug announcements.
+    "Debug": false,
+
+    // Admin ban system preset: 'Default' (sw_ban #{userid}), 'T3Admin' (sw_addban {steamid}), or 'Custom' (uses BanCommand / KickCommand).
+    "AdminSystem": "Default",
+
+    // Server console command template executed for kicking. Available placeholders: {userid}, {slot}, {steamid}, {name}, {reason}.
+    "KickCommand": "sw_kick #{userid} \"[AegisAC] {reason}\"",
+
+    // Server console command template executed for banning when AdminSystem is 'Custom'. Available placeholders: {userid}, {slot}, {steamid}, {name}, {reason}.
+    "BanCommand": "sw_ban #{userid} 0 \"[AegisAC] {reason}\"",
+
+    // Aimbot detector module configuration.
+    "Aimbot": {
+      "Enabled": true,
+      "Punishment": "None",
+      "TeammatesAreEnemies": false,
+      "SnapAngleThreshold": 26.0,
+      "SmoothMinimumMovement": 12.0,
+      "LowFovSmoothMinimumMovement": 3.5,
+      "SmoothMinimumPathEfficiency": 0.96,
+      "EnableSilentAim": true,
+      "EnableDoubletap": true,
+      "EnableAntiAim": true
+    },
+
+    // Silent Aim & Snap-Return detector module configuration.
+    "SilentAim": {
+      "Enabled": true,
+      "Punishment": "None",
+      "ScoreThreshold": 10.0,
+      "EnableSubtickSilentAim": true,
+      "EnableSnapReturn": true
+    },
+
+    // Triggerbot detector module configuration.
+    "Triggerbot": {
+      "Enabled": true,
+      "Punishment": "None",
+      "EvidenceThreshold": 4,
+      "MaxReactionTimeMs": 90.0,
+      "EnableNativeTrace": true,
+      "EnableSmokeCheck": true
+    },
+
+    // Aimlock detector module configuration.
+    "Aimlock": {
+      "Enabled": true,
+      "Punishment": "None",
+      "EvidenceThreshold": 3,
+      "TrackingDurationSeconds": 1.0,
+      "MinimumDistance": 150.0,
+      "MinimumTargetTravel": 128.0,
+      "RequireWallOcclusion": true
+    },
+
+    // Anti-Aim & Spinbot detector configuration.
+    "AntiAim": {
+      "Enabled": true,
+      "Punishment": "None",
+      "EnableUntrustedCheck": true,
+      "EnableSpinbotCheck": true
+    },
+
+    // Movement Automation (Bhop, Nulls / Snap-Tap, AutoStrafe) detector configuration.
+    "Movement": {
+      "Enabled": true,
+      "Punishment": "None",
+      "EnableBhopCheck": true,
+      "BhopStreakThreshold": 10,
+      "EnableNullsCheck": true,
+      "NullsStreakThreshold": 64,
+      "EnableAutoStrafeCheck": true
+    },
+
+    // Exploits & Input Integrity (Subtick Tamper, Desubtick, Invalid Input, NameChanger) detector configuration.
+    "Exploits": {
+      "Enabled": true,
+      "Punishment": "None",
+      "EnableSubtickTamperCheck": true,
+      "EnableDesubtickCheck": true,
+      "EnableInvalidInputCheck": true,
+      "EnableNameChangerCheck": true
+    },
+
+    // Client Event Subscription / DLL Injection scanner configuration.
+    "DllInjection": {
+      "Enabled": true,
+      "Punishment": "None",
+      "InitialScanDelaySeconds": 10.0,
+      "ScanIntervalSeconds": 120.0
+    },
+
+    // Client ConVar verification (CVarScanner) detector configuration.
+    "CVarScanner": {
+      "Enabled": true,
+      "Punishment": "None",
+      "InitialScanDelaySeconds": 15.0,
+      "ScanIntervalSeconds": 90.0,
+      "CheckDrawOtherModels": true,
+      "CheckMatWireframe": true,
+      "CheckSvCheats": true,
+      "CheckHostTimescale": true,
+      "CheckFogEnable": true,
+      "CheckPredictionAndLagComp": true
+    },
+
+    // Server-side Anti-WallHack and network entity transmission occlusion configuration.
+    "AntiWallHack": {
+      "Enabled": true,
+      "CornerPrediction": true,
+      "CornerPredictionSeconds": 0.12,
+      "VisibleGraceTicks": 12,
+      "MaxTracesPerTick": 2048
+    },
+
+    // Incident telemetry & demo proof JSON dump configuration.
+    "Telemetry": {
+      "DumpIncidents": true,
+      "IncidentsDirectory": "logs/aegisac/incidents"
+    },
+
+    // Discord webhook notifications configuration.
+    "Discord": {
+      "Enabled": false,
+      "WebhookUrl": ""
+    }
+  }
+}

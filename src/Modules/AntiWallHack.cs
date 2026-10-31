@@ -4,8 +4,9 @@ using Microsoft.Extensions.Logging;
 using SwiftlyS2.Shared;
 using SwiftlyS2.Shared.Convars;
 using AegisAC.Configuration;
+using AegisAC.Utilities.AntiWallHack;
 
-namespace AegisAC.Modules.AntiWallHack;
+namespace AegisAC.Modules;
 
 /// <summary>
 /// Server-side Anti-WallHack (Fog of War / Entity Occlusion) detector module.

@@ -8,7 +8,7 @@ using SwiftlyS2.Shared.Players;
 using SwiftlyS2.Shared.SchemaDefinitions;
 using AegisAC.Configuration;
 
-namespace AegisAC.Modules.AntiWallHack;
+namespace AegisAC.Utilities.AntiWallHack;
 
 /// <summary>
 /// Snapshot of a player state in the current tick.

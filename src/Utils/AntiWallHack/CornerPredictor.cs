@@ -2,7 +2,7 @@ using System;
 using System.Numerics;
 using SwiftlyS2.Shared.Natives;
 
-namespace AegisAC.Modules.AntiWallHack;
+namespace AegisAC.Utilities.AntiWallHack;
 
 /// <summary>
 /// Predicts eye position when a player peeks around corners, ensuring enemies behind

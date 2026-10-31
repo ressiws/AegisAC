@@ -8,7 +8,7 @@ using SwiftlyS2.Shared.SchemaDefinitions;
 using SwiftlyS2.Shared.Trace;
 using AegisAC.Configuration;
 
-namespace AegisAC.Modules.AntiWallHack;
+namespace AegisAC.Utilities.AntiWallHack;
 
 internal enum OcclusionResult : byte
 {

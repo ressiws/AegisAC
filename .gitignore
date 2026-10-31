@@ -8,5 +8,7 @@ PENDING.md
 PENDENCIAS.md
 .agents/
 examples/
-resources/
+resources/*
+!resources/templates/
+!resources/templates/**
 docs/future_updates
