@@ -16,6 +16,7 @@ using AegisAC.Configuration;
 using AegisAC.Modules;
 using AegisAC.Notifications;
 using AegisAC.Punishment;
+using AegisAC.Telemetry;
 
 namespace AegisAC;
 
@@ -541,6 +542,23 @@ public sealed class AegisAC : BasePlugin
 		Utils.ConsoleLog($"[{moduleName}] {name} ({player.SteamID}) detected: {detection} — {evidence}");
 
 		_punishmentManager.Punish(player, punishment, moduleName, detection);
+
+		if (_config.Telemetry.DumpIncidents)
+		{
+			IncidentDumper.DumpIncident(
+				_config.Telemetry.IncidentsDirectory,
+				_config.ServerId,
+				CurrentMapName,
+				CurrentTick,
+				name,
+				player.SteamID,
+				player.UserID,
+				player.PlayerID,
+				moduleName,
+				detection,
+				punishment.ToString(),
+				evidence);
+		}
 
 		if (_config.Discord.Enabled && !string.IsNullOrWhiteSpace(_config.Discord.WebhookUrl))
 		{

@@ -80,7 +80,7 @@ public class AimbotDetectionTests
     }
 
     [Fact]
-    public void BlatantRageSnap_SingleTick95Degrees_TriggersImmediateDetection()
+    public void BlatantRageSnap_SingleTick95Degrees_TriggersDetectionAtThresholdTwo()
     {
         var h = new AimbotTestHarness();
         var (attacker, _) = h.AddPlayer(1, team: 2, origin: new Vector(0f, 0f, 0f));
@@ -92,9 +92,15 @@ public class AimbotDetectionTests
             h.StepTick(t, attacker, t, new QAngle(0f, 95f, 0f));
         }
 
-        // Tick 6: Instant 95-degree snap onto victim head/chest and fire
+        // Tick 6: Instant 95-degree snap onto victim head/chest and fire (Incident 1)
         QAngle targetAim = AimMath.Bearing(new Vector(0f, 0f, 64f), new Vector(500f, 0f, 64f));
         h.StepTick(6, attacker, 6, targetAim, targetAim, fireWeapon: true, hurtVictim: victim);
+
+        // Tick 7: look away
+        h.StepTick(7, attacker, 7, new QAngle(0f, 95f, 0f));
+
+        // Tick 8: Second 95-degree snap onto victim and fire (Incident 2 -> confirms detection, eliminating 1-shot false ban)
+        h.StepTick(8, attacker, 8, targetAim, targetAim, fireWeapon: true, hurtVictim: victim);
 
         Assert.Single(h.Detections);
         Assert.Equal("AIMBOT", h.Detections[0].Module);

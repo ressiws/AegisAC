@@ -288,11 +288,12 @@ internal sealed class AntiAimDetector
     {
         var state = _players[slot];
         DateTime now = DateTime.UtcNow;
+        state.UntrustedDetections++;
 
-        if ((now - state.LastUntrustedAlertTime).TotalSeconds >= 60.0)
+        bool isDeterministicNonFinite = reason.Contains("Non-finite", StringComparison.OrdinalIgnoreCase);
+        if ((isDeterministicNonFinite || state.UntrustedDetections >= 2) && (now - state.LastUntrustedAlertTime).TotalSeconds >= 60.0)
         {
             state.LastUntrustedAlertTime = now;
-            state.UntrustedDetections++;
             StatUntrustedDetections++;
 
             string details = $"Anti-Untrusted exploit detected: {reason}. (#{state.UntrustedDetections})";

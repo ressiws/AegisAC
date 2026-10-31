@@ -674,6 +674,10 @@ internal sealed class TriggerbotDetector
 
 		st.Incidents.RemoveAll(i => now - i.Time >= EvidenceWindow);
 		st.ReactionHistory.RemoveAll(h => now - h.Time >= EvidenceWindow);
+		if (st.Incidents.Count == 0)
+		{
+			st.EvidenceScore = 0.0f;
+		}
 
 		st.ReactionHistory.Add((now, pendingMatch.ReactionTicks, pendingMatch.Mode));
 		while (st.ReactionHistory.Count > HistoryLimit)

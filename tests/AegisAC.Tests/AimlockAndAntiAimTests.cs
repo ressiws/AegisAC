@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using AegisAC.Configuration;
 using AegisAC.Modules;
+using AegisAC.Punishment;
+using AegisAC.Telemetry;
+using SwiftlyS2.Shared.Engine;
 using SwiftlyS2.Shared.Natives;
 using SwiftlyS2.Shared.Players;
 using Xunit;
@@ -759,5 +762,100 @@ public class AimlockAndAntiAimTests
         bool reconnectScan = detector.ScanClientEventSubscriptions(1, player, "Cheater", (slot, ev) => ev == "hostname_changed");
         Assert.True(reconnectScan);
         Assert.Equal(2, alerts.Count);
+    }
+
+        [Fact]
+    public void PunishmentManager_AdminSystemPresets_FormatCorrectConsoleCommands()
+    {
+        var executedCommands = new List<string>();
+        var (player, state) = TestPlayerFactory.CreatePlayer(1, steamId: 76561198012345678UL);
+        state.IsAuthorized = true;
+
+        var coreProxy = System.Reflection.DispatchProxy.Create<SwiftlyS2.Shared.ISwiftlyCore, InterfaceProxy<SwiftlyS2.Shared.ISwiftlyCore>>() as InterfaceProxy<SwiftlyS2.Shared.ISwiftlyCore>;
+        var engineProxy = System.Reflection.DispatchProxy.Create<SwiftlyS2.Shared.Services.IEngineService, InterfaceProxy<SwiftlyS2.Shared.Services.IEngineService>>() as InterfaceProxy<SwiftlyS2.Shared.Services.IEngineService>;
+        engineProxy!.Handler = (m, a) =>
+        {
+            if (m.Name == "ExecuteCommand" && a is { Length: > 0 } && a[0] is string cmd)
+            {
+                executedCommands.Add(cmd);
+            }
+            return null;
+        };
+
+        coreProxy!.Handler = (m, a) => m.Name switch
+        {
+            "get_Engine" => (SwiftlyS2.Shared.Services.IEngineService)(object)engineProxy,
+            "get_IsGameThread" => true,
+            _ => InterfaceProxy<SwiftlyS2.Shared.ISwiftlyCore>.GetDefaultValue(m.ReturnType)
+        };
+
+        var core = (SwiftlyS2.Shared.ISwiftlyCore)(object)coreProxy;
+
+        // 1. Default preset: sw_ban #{userid} 0
+        var configDefault = new AegisConfig { AdminSystem = "Default" };
+        var pmDefault = new PunishmentManager(core, configDefault);
+        pmDefault.Punish(player, PunishmentType.Ban, "Aimbot", "Rage snap");
+        Assert.Single(executedCommands);
+        Assert.StartsWith("sw_ban #", executedCommands[0]);
+        Assert.Contains("[AegisAC] Aimbot: Rage snap", executedCommands[0]);
+        executedCommands.Clear();
+
+        // 2. T3Admin preset: sw_addban {steamid} 0
+        var configT3 = new AegisConfig { AdminSystem = "T3Admin" };
+        var pmT3 = new PunishmentManager(core, configT3);
+        pmT3.Punish(player, PunishmentType.Ban, "Aimbot", "Rage snap");
+        Assert.Single(executedCommands);
+        Assert.StartsWith($"sw_addban {player.SteamID}", executedCommands[0]);
+        executedCommands.Clear();
+
+        // 3. Custom preset: custom ban command template
+        var configCustom = new AegisConfig
+        {
+            AdminSystem = "Custom",
+            BanCommand = "custom_ban {steamid} 9999 {reason}"
+        };
+        var pmCustom = new PunishmentManager(core, configCustom);
+        pmCustom.Punish(player, PunishmentType.Ban, "AntiAim", "Spinbot");
+        Assert.Single(executedCommands);
+        Assert.Equal($"custom_ban {player.SteamID} 9999 AntiAim: Spinbot", executedCommands[0]);
+    }
+
+    [Fact]
+    public void IncidentDumper_CreatesStructuredJsonDumpOnDisk()
+    {
+        string tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "aegisac_test_incidents_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            IncidentDumper.DumpIncident(
+                tempDir,
+                "server-test-1",
+                "de_mirage",
+                12345,
+                "Cheater",
+                76561198012345678UL,
+                10,
+                1,
+                "Aimbot",
+                "Blatant Rage Snap",
+                "None",
+                "snap=95deg, error 90->0");
+
+            // Allow async file write task to flush
+            System.Threading.Thread.Sleep(250);
+
+            var files = System.IO.Directory.GetFiles(tempDir, "*.json");
+            Assert.Single(files);
+            string json = System.IO.File.ReadAllText(files[0]);
+            Assert.Contains("76561198012345678", json);
+            Assert.Contains("de_mirage", json);
+            Assert.Contains("Blatant Rage Snap", json);
+        }
+        finally
+        {
+            if (System.IO.Directory.Exists(tempDir))
+            {
+                System.IO.Directory.Delete(tempDir, true);
+            }
+        }
     }
 }

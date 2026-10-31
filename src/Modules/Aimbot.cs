@@ -148,6 +148,7 @@ internal sealed class PlayerState
 	public string LastWeaponFireName = string.Empty;
 	public float DoubletapScore;
 	public DateTime LastUntrustedAlertTime = DateTime.MinValue;
+	public int UntrustedAngleCount;
 	public DateTime LastDoubletapAlertTime = DateTime.MinValue;
 
 	// RCS / No-Recoil spray pattern state (Vanguard RECOIL_THRESHOLD & PATTERN_VARIANCE < 8.157%)
@@ -548,9 +549,12 @@ internal sealed class AimbotDetector
 		{
 			StatSkipNonFinite++;
 			DateTime now = DateTime.UtcNow;
-			if ((now - st.LastUntrustedAlertTime).TotalSeconds >= 60.0)
+			st.UntrustedAngleCount++;
+			bool isNonFinite = !AimMath.IsFinite(baseAngles) || !AimMath.IsFinite(effectiveAngles) || !subtickAnglesValid;
+			if ((isNonFinite || st.UntrustedAngleCount >= 2) && (now - st.LastUntrustedAlertTime).TotalSeconds >= 60.0)
 			{
 				st.LastUntrustedAlertTime = now;
+				st.UntrustedAngleCount = 0;
 				StatDetections++;
 				_announce(player, "ANTI_UNTRUSTED", $"Invalid viewangles: Pitch {effectiveAngles.X:F2}°, Yaw {effectiveAngles.Y:F2}°, Roll {effectiveAngles.Z:F2}°. Deterministic exploit.");
 			}
@@ -1855,7 +1859,7 @@ internal sealed class AimbotDetector
 		}
 
 		bool isBlatant = isBlatantSnap || matchedRule == EvidenceType.SilentAim;
-		int threshold = isBlatant ? 1 : (isBlatantLaser ? 2 : (matchedRule == EvidenceType.SmoothConvergence ? SmoothDetectionThreshold : SnapDetectionThreshold));
+		int threshold = isBlatantSnap ? 2 : (isBlatantLaser ? 2 : (matchedRule == EvidenceType.SilentAim ? 1 : (matchedRule == EvidenceType.SmoothConvergence ? SmoothDetectionThreshold : SnapDetectionThreshold)));
 
 		string blatantTag = isBlatantLaser
 			? " [BLATANT LASER: zero-jitter straight trajectory]"

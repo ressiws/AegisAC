@@ -140,7 +140,7 @@ internal sealed class SilentAimDetector
         {
             float excess = desync - totalAllowance;
             float silentPoints = excess >= 20.0f
-                ? threshold // Blatant sub-tick rage silent aim (>20 deg divergence)
+                ? MathF.Max(2.5f, threshold * 0.5f) // Blatant sub-tick rage silent aim: requires 2 blatant shots for threshold
                 : (excess >= 6.0f ? (attackerAirborne ? 5.0f : 4.0f) : (attackerAirborne ? 3.5f : 2.5f));
 
             _scores[attackerId] = MathF.Min(20f, _scores[attackerId] + silentPoints);

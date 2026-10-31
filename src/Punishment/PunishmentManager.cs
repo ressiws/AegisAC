@@ -75,12 +75,18 @@ public sealed class PunishmentManager
 			return;
 		}
 
-		if (!string.IsNullOrWhiteSpace(_config.BanCommand))
+		string system = _config.AdminSystem?.Trim() ?? "Default";
+		if (string.Equals(system, "T3Admin", StringComparison.OrdinalIgnoreCase))
+		{
+			_core.Engine.ExecuteCommand($"sw_addban {player.SteamID} 0 \"[AegisAC] {Sanitize(reason)}\"");
+			player.Kick($"[AegisAC] {reason}", default);
+		}
+		else if (string.Equals(system, "Custom", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(_config.BanCommand))
 		{
 			string cmd = FormatCommand(_config.BanCommand, player, name, reason);
 			_core.Engine.ExecuteCommand(cmd);
 		}
-		else
+		else // Default: sw_ban #{userid} 0
 		{
 			_core.Engine.ExecuteCommand($"sw_ban #{player.UserID} 0 \"[AegisAC] {Sanitize(reason)}\"");
 			player.Kick($"[AegisAC] {reason}", default);

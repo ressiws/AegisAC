@@ -287,6 +287,18 @@ public sealed class DiscordConfig
 }
 
 /// <summary>
+/// Configuration for Incident Telemetry JSON dump logging.
+/// </summary>
+public sealed class TelemetryConfig
+{
+	[Description("Enable logging structured incident JSON dumps to disk for staff demo review.")]
+	public bool DumpIncidents { get; set; } = true;
+
+	[Description("Directory path where incident JSON dumps are written.")]
+	public string IncidentsDirectory { get; set; } = "logs/aegisac/incidents";
+}
+
+/// <summary>
 /// Root configuration for Aegis Anti-Cheat.
 /// </summary>
 public sealed class AegisConfig
@@ -296,6 +308,9 @@ public sealed class AegisConfig
 
 	[Description("Global debug mode for Aegis Anti-Cheat. Enables diagnostic console messages and in-game status commands.")]
 	public bool Debug { get; set; } = false;
+
+	[Description("Admin ban system preset: 'Default' (sw_ban #{userid}), 'T3Admin' (sw_addban {steamid}), or 'Custom' (uses BanCommand / KickCommand).")]
+	public string AdminSystem { get; set; } = "Default";
 
 	[Description("Server console command template executed for kicking. Available placeholders: {userid}, {slot}, {steamid}, {name}, {reason}.")]
 	public string KickCommand { get; set; } = "sw_kick #{userid} \"[AegisAC] {reason}\"";
@@ -329,6 +344,9 @@ public sealed class AegisConfig
 
 	[Description("Client Event Subscription (DLL Injection) detector configuration.")]
 	public DllInjectionConfig DllInjection { get; set; } = new();
+
+	[Description("Incident telemetry and demo proof dump configuration.")]
+	public TelemetryConfig Telemetry { get; set; } = new();
 
 	[Description("Discord webhook notifications configuration.")]
 	public DiscordConfig Discord { get; set; } = new();

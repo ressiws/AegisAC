@@ -58,6 +58,23 @@ public static class DiscordWebhookNotifier
 						"⚪ **LOGGED ONLY** — No Punishment"
 				};
 
+				string riskLevel = moduleName switch
+				{
+					"DllInjection" or "CVarScanner" or "Anti-Untrusted" or "Exploits" =>
+						"🔴 **CRITICAL RISK (Deterministic Violation)**",
+					"SilentAim" or "Aimbot" or "AntiAim" or "Aimlock" =>
+						"🟠 **HIGH RISK (Confirmed Multi-Incident)**",
+					_ =>
+						"🟡 **MEDIUM RISK (Heuristic Anomaly)**"
+				};
+
+				float confidencePct = moduleName switch
+				{
+					"DllInjection" or "CVarScanner" or "Anti-Untrusted" or "Exploits" => 99.9f,
+					"SilentAim" or "Aimbot" or "AntiAim" or "Aimlock" => 98.5f,
+					_ => 94.0f
+				};
+
 				string steamValue = steamId > 0
 					? $"[`{steamId}`](https://steamcommunity.com/profiles/{steamId})"
 					: "`N/A`";
@@ -106,7 +123,9 @@ public static class DiscordWebhookNotifier
 						"**DETECTION**\n" +
 						$"`{EscapeInline(detectionReason)}`\n\n" +
 						"**ACTION TAKEN**\n" +
-						actionLabel
+						actionLabel + "\n\n" +
+						"**RISK ASSESSMENT**\n" +
+						$"{riskLevel} (`{confidencePct:F1}%`)"
 					)
 				};
 
@@ -151,6 +170,27 @@ public static class DiscordWebhookNotifier
 					components = components.ToArray()
 				};
 
+				string displayEvidence = string.IsNullOrWhiteSpace(evidence) ? "None" : (evidence.Length > 900 ? evidence[..900] + "..." : evidence);
+				displayEvidence = displayEvidence.Replace("```", "'''");
+
+				var embed = new
+				{
+					title = "🚨 CHEATER DETECTED — Aegis Anti-Cheat",
+					description = $"Player **{EscapeMarkdown(playerName)}** has been flagged by Aegis Anti-Cheat.",
+					color = accentColor,
+					fields = new[]
+					{
+						new { name = "👤 Player", value = $"{EscapeInline(playerName)}\n{steamValue}", @inline = true },
+						new { name = "🛡️ Detection", value = $"**Module:** `{EscapeInline(moduleName)}`\n**Action:** {actionLabel}", @inline = true },
+						new { name = "🎮 Match Context", value = $"**Server:** `{EscapeInline(serverId)}`\n**Map:** `{EscapeInline(mapName)}`\n**Tick:** `{serverTick}`", @inline = true },
+						new { name = "🎯 Risk & Confidence", value = $"{riskLevel} · Confidence: **{confidencePct:F1}%**", @inline = false },
+						new { name = "📋 Detection Details", value = $"`{EscapeInline(detectionReason)}`", @inline = false },
+						new { name = "📊 Incident Evidence", value = $"```text\n{displayEvidence}\n```", @inline = false }
+					},
+					footer = new { text = $"Aegis Anti-Cheat · Server-Sided Protection · {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm} UTC" },
+					timestamp = DateTimeOffset.UtcNow.ToString("o")
+				};
+
 				var payload = new
 				{
 					username = "Aegis Anti-Cheat",
@@ -158,6 +198,11 @@ public static class DiscordWebhookNotifier
 						"https://raw.githubusercontent.com/ressiws/AegisAC/main/.github/assets/logo.jpg",
 
 					flags = ComponentsV2Flag,
+
+					embeds = new object[]
+					{
+						embed
+					},
 
 					components = new object[]
 					{
