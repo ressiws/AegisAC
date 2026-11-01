@@ -30,6 +30,7 @@ namespace AegisAC;
 public sealed class AegisAC : BasePlugin
 {
 	private AegisConfig _config = new();
+	private string Prefix => !string.IsNullOrWhiteSpace(_config.Prefix) ? _config.Prefix : "AegisAC";
 	private PunishmentManager _punishmentManager = null!;
 	private NetworkSafetyMonitor _networkSafety = null!;
 	private AimbotDetector _detector = null!;
@@ -50,6 +51,7 @@ public sealed class AegisAC : BasePlugin
 	public override void Load(bool hotReload)
 	{
 		Utils.Initialize(Core);
+		Utils.Prefix = Prefix;
 
 		// Initialize plugin configuration using SwiftlyS2 configuration service
 		Core.Configuration
@@ -217,6 +219,7 @@ public sealed class AegisAC : BasePlugin
 		if (loaded != null)
 		{
 			_config = loaded;
+			Utils.Prefix = Prefix;
 			RefreshTeammatesAreEnemies();
 			Utils.DebugMode = _config.Debug;
 			_punishmentManager?.UpdateConfig(_config);
@@ -440,11 +443,11 @@ public sealed class AegisAC : BasePlugin
 	{
 		if (!_config.Debug)
 		{
-			context.Reply("[AegisAC] Debug mode is disabled. Set \"Debug\": true in config.jsonc to inspect live module telemetry.");
+			context.Reply($"[{Prefix}] Debug mode is disabled. Set \"Debug\": true in config.jsonc to inspect live module telemetry.");
 			return;
 		}
 
-		context.Reply($"[AegisAC Status] tick={CurrentTick} map={CurrentMapName}");
+		context.Reply($"[{Prefix} Status] tick={CurrentTick} map={CurrentMapName}");
 		context.Reply($"  Aimbot      : {_detector.Stats()}");
 		context.Reply($"  SilentAim   : {_detector.SilentAim.Stats()}");
 		context.Reply($"  Triggerbot  : {_triggerbot.Stats()}");
@@ -462,11 +465,11 @@ public sealed class AegisAC : BasePlugin
 	{
 		if (!_config.Debug)
 		{
-			context.Reply("[AegisAC] Debug mode is disabled.");
+			context.Reply($"[{Prefix}] Debug mode is disabled.");
 			return;
 		}
 
-		context.Reply($"[AegisAC Aimbot] tick={CurrentTick} {_detector.Stats()}");
+		context.Reply($"[{Prefix} Aimbot] tick={CurrentTick} {_detector.Stats()}");
 	}
 
 	[Command("silentaim_status", registerRaw: true, permission: "@css/root")]
@@ -474,11 +477,11 @@ public sealed class AegisAC : BasePlugin
 	{
 		if (!_config.Debug)
 		{
-			context.Reply("[AegisAC] Debug mode is disabled.");
+			context.Reply($"[{Prefix}] Debug mode is disabled.");
 			return;
 		}
 
-		context.Reply($"[AegisAC SilentAim] tick={CurrentTick} {_detector.SilentAim.Stats()}");
+		context.Reply($"[{Prefix} SilentAim] tick={CurrentTick} {_detector.SilentAim.Stats()}");
 	}
 
 	[Command("triggerbot_status", registerRaw: true, permission: "@css/root")]
@@ -486,11 +489,11 @@ public sealed class AegisAC : BasePlugin
 	{
 		if (!_config.Debug)
 		{
-			context.Reply("[AegisAC] Debug mode is disabled.");
+			context.Reply($"[{Prefix}] Debug mode is disabled.");
 			return;
 		}
 
-		context.Reply($"[AegisAC Triggerbot] tick={CurrentTick} {_triggerbot.Stats()}");
+		context.Reply($"[{Prefix} Triggerbot] tick={CurrentTick} {_triggerbot.Stats()}");
 	}
 
 	[Command("aimlock_status", registerRaw: true, permission: "@css/root")]
@@ -498,11 +501,11 @@ public sealed class AegisAC : BasePlugin
 	{
 		if (!_config.Debug)
 		{
-			context.Reply("[AegisAC] Debug mode is disabled.");
+			context.Reply($"[{Prefix}] Debug mode is disabled.");
 			return;
 		}
 
-		context.Reply($"[AegisAC Aimlock] tick={CurrentTick} {_aimlock.Stats()}");
+		context.Reply($"[{Prefix} Aimlock] tick={CurrentTick} {_aimlock.Stats()}");
 	}
 
 	[Command("antiaim_status", registerRaw: true, permission: "@css/root")]
@@ -510,11 +513,11 @@ public sealed class AegisAC : BasePlugin
 	{
 		if (!_config.Debug)
 		{
-			context.Reply("[AegisAC] Debug mode is disabled.");
+			context.Reply($"[{Prefix}] Debug mode is disabled.");
 			return;
 		}
 
-		context.Reply($"[AegisAC AntiAim] tick={CurrentTick} {_antiAim.Stats()}");
+		context.Reply($"[{Prefix} AntiAim] tick={CurrentTick} {_antiAim.Stats()}");
 	}
 
 	[Command("dllinjection_status", registerRaw: true, permission: "@css/root")]
@@ -522,11 +525,11 @@ public sealed class AegisAC : BasePlugin
 	{
 		if (!_config.Debug)
 		{
-			context.Reply("[AegisAC] Debug mode is disabled.");
+			context.Reply($"[{Prefix}] Debug mode is disabled.");
 			return;
 		}
 
-		context.Reply($"[AegisAC DllInjection] tick={CurrentTick} {_dllInjection.Stats()}");
+		context.Reply($"[{Prefix} DllInjection] tick={CurrentTick} {_dllInjection.Stats()}");
 	}
 
 	[Command("cvar_status", registerRaw: true, permission: "@css/root")]
@@ -534,11 +537,11 @@ public sealed class AegisAC : BasePlugin
 	{
 		if (!_config.Debug)
 		{
-			context.Reply("[AegisAC] Debug mode is disabled.");
+			context.Reply($"[{Prefix}] Debug mode is disabled.");
 			return;
 		}
 
-		context.Reply($"[AegisAC CVarScanner] tick={CurrentTick} {_cvarScanner.Stats()}");
+		context.Reply($"[{Prefix} CVarScanner] tick={CurrentTick} {_cvarScanner.Stats()}");
 	}
 
 		[Command("awh_status", registerRaw: true, permission: "@css/root")]
@@ -547,11 +550,11 @@ public sealed class AegisAC : BasePlugin
 	{
 		if (!_config.Debug)
 		{
-			context.Reply("[AegisAC] Debug mode is disabled.");
+			context.Reply($"[{Prefix}] Debug mode is disabled.");
 			return;
 		}
 
-		context.Reply($"[AegisAC AntiWallHack] tick={CurrentTick} {_antiWallHack.Stats()}");
+		context.Reply($"[{Prefix} AntiWallHack] tick={CurrentTick} {_antiWallHack.Stats()}");
 	}
 
 	[Command("aegis_reload", registerRaw: true, permission: "@css/root")]
@@ -559,7 +562,7 @@ public sealed class AegisAC : BasePlugin
 	public void ReloadCommand(ICommandContext context)
 	{
 		LoadConfig();
-		context.Reply("[AegisAC] Configuration reloaded successfully.");
+		context.Reply($"[{Prefix}] Configuration reloaded successfully.");
 	}
 
 	private string CurrentMapName
@@ -581,7 +584,7 @@ public sealed class AegisAC : BasePlugin
 	private void AnnounceDetection(IPlayer player, string moduleName, string detection, string evidence, PunishmentType punishment)
 	{
 		string name = player.Controller?.PlayerName ?? $"#{player.PlayerID}";
-		Utils.Log($" \x04[AegisAC]\x01 \x07{name}\x01 detected: \x0F{detection}\x01");
+		Utils.Log($" \x04[{Prefix}]\x01 \x07{name}\x01 detected: \x0F{detection}\x01");
 		Utils.ConsoleLog($"[{moduleName}] {name} ({player.SteamID}) detected: {detection} — {evidence}");
 
 		_punishmentManager.Punish(player, punishment, moduleName, detection);
@@ -615,7 +618,8 @@ public sealed class AegisAC : BasePlugin
 				moduleName,
 				detection,
 				punishment,
-				evidence);
+				evidence,
+				Prefix);
 		}
 	}
 
@@ -644,11 +648,11 @@ public sealed class AegisAC : BasePlugin
 	{
 		if (!_config.Debug)
 		{
-			context.Reply("[AegisAC] Debug mode is disabled.");
+			context.Reply($"[{Prefix}] Debug mode is disabled.");
 			return;
 		}
 
-		context.Reply($"[AegisAC Movement] tick={CurrentTick} {_movement.Stats()}");
+		context.Reply($"[{Prefix} Movement] tick={CurrentTick} {_movement.Stats()}");
 	}
 
 	[Command("exploits_status", registerRaw: true, permission: "@css/root")]
@@ -656,11 +660,11 @@ public sealed class AegisAC : BasePlugin
 	{
 		if (!_config.Debug)
 		{
-			context.Reply("[AegisAC] Debug mode is disabled.");
+			context.Reply($"[{Prefix}] Debug mode is disabled.");
 			return;
 		}
 
-		context.Reply($"[AegisAC Exploits] tick={CurrentTick} {_exploits.Stats()}");
+		context.Reply($"[{Prefix} Exploits] tick={CurrentTick} {_exploits.Stats()}");
 	}
 
 	private void AnnounceAntiAim(IPlayer player, string detection, string evidence) =>

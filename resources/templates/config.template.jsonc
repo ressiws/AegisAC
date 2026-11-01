@@ -1,5 +1,8 @@
 {
   "AegisAC": {
+    // Custom prefix/tag used in chat announcements, kick/ban reasons, and server logs.
+    "Prefix": "AegisAC",
+
     // Unique identifier for this server instance in Discord alerts and logs.
     "ServerId": "cs2-server-1",
 
@@ -9,11 +12,11 @@
     // Admin ban system preset: 'Default' (sw_ban #{userid}), 'T3Admin' (sw_addban {steamid}), or 'Custom' (uses BanCommand / KickCommand).
     "AdminSystem": "Default",
 
-    // Server console command template executed for kicking. Available placeholders: {userid}, {slot}, {steamid}, {name}, {reason}.
-    "KickCommand": "sw_kick #{userid} \"[AegisAC] {reason}\"",
+    // Server console command template executed for kicking. Available placeholders: {prefix}, {userid}, {slot}, {steamid}, {name}, {reason}.
+    "KickCommand": "sw_kick #{userid} \"[{prefix}] {reason}\"",
 
-    // Server console command template executed for banning when AdminSystem is 'Custom'. Available placeholders: {userid}, {slot}, {steamid}, {name}, {reason}.
-    "BanCommand": "sw_ban #{userid} 0 \"[AegisAC] {reason}\"",
+    // Server console command template executed for banning when AdminSystem is 'Custom'. Available placeholders: {prefix}, {userid}, {slot}, {steamid}, {name}, {reason}.
+    "BanCommand": "sw_ban #{userid} 0 \"[{prefix}] {reason}\"",
 
     // Aimbot detector module configuration.
     "Aimbot": {

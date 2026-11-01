@@ -330,6 +330,9 @@ public sealed class AntiWallHackConfig
 /// </summary>
 public sealed class AegisConfig
 {
+	[Description("Custom prefix/tag used in chat announcements, kick/ban reasons, server logs, and console notifications (default: 'AegisAC').")]
+	public string Prefix { get; set; } = "AegisAC";
+
 	[Description("Unique identifier for this server instance in Discord alerts and logs.")]
 	public string ServerId { get; set; } = "cs2-server-1";
 
@@ -339,11 +342,11 @@ public sealed class AegisConfig
 	[Description("Admin ban system preset: 'Default' (sw_ban #{userid}), 'T3Admin' (sw_addban {steamid}), or 'Custom' (uses BanCommand / KickCommand).")]
 	public string AdminSystem { get; set; } = "Default";
 
-	[Description("Server console command template executed for kicking. Available placeholders: {userid}, {slot}, {steamid}, {name}, {reason}.")]
-	public string KickCommand { get; set; } = "sw_kick #{userid} \"[AegisAC] {reason}\"";
+	[Description("Server console command template executed for kicking. Available placeholders: {prefix}, {userid}, {slot}, {steamid}, {name}, {reason}.")]
+	public string KickCommand { get; set; } = "sw_kick #{userid} \"[{prefix}] {reason}\"";
 
-	[Description("Server console command template executed for banning. Available placeholders: {userid}, {slot}, {steamid}, {name}, {reason}.")]
-	public string BanCommand { get; set; } = "sw_ban #{userid} 0 \"[AegisAC] {reason}\"; kickid {userid} \"[AegisAC] {reason}\"";
+	[Description("Server console command template executed for banning. Available placeholders: {prefix}, {userid}, {slot}, {steamid}, {name}, {reason}.")]
+	public string BanCommand { get; set; } = "sw_ban #{userid} 0 \"[{prefix}] {reason}\"; kickid {userid} \"[{prefix}] {reason}\"";
 
 	[Description("Aimbot, RCS, Doubletap, Inhuman Accuracy, and Irregular Behavior detector configuration.")]
 	public AimbotConfig Aimbot { get; set; } = new();

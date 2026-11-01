@@ -12,6 +12,7 @@ public static class Utils
 	private static ILogger? _logger;
 	private static readonly object ConsoleLock = new();
 
+	public static string Prefix { get; set; } = "AegisAC";
 	public static bool DebugMode { get; set; } = false;
 
 	private sealed record ColorStyle(
@@ -58,7 +59,7 @@ public static class Utils
 
 	public static void Log(string message)
 	{
-		string formatted = $"{{red}} @AegisAC {{grey}}~ {{default}} {message}";
+		string formatted = $"{{red}} @{Prefix} {{grey}}~ {{default}} {message}";
 
 		WriteConsole(formatted);
 
@@ -72,7 +73,7 @@ public static class Utils
 	/// <summary>Server console diagnostic log (never broadcast to player chat).</summary>
 	public static void ConsoleLog(string message)
 	{
-		WriteConsole($"{{red}} @AegisAC {{grey}}~ {{default}} {message}");
+		WriteConsole($"{{red}} @{Prefix} {{grey}}~ {{default}} {message}");
 	}
 
 	private static void WriteConsole(string message)

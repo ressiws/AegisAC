@@ -443,6 +443,9 @@ AegisAC configurations are stored in `addons/swiftlys2/configs/plugins/AegisAC/c
 ```jsonc
 {
   "AegisAC": {
+    // Custom prefix/tag used in chat announcements, kick/ban reasons, server logs, and console notifications.
+    "Prefix": "AegisAC",
+
     // Unique server identifier included in Discord alerts and logs.
     "ServerId": "cs2-server-1",
 
@@ -452,11 +455,11 @@ AegisAC configurations are stored in `addons/swiftlys2/configs/plugins/AegisAC/c
     // Admin ban system preset: 'Default' (sw_ban #{userid}), 'T3Admin' (sw_addban {steamid}), or 'Custom' (uses BanCommand / KickCommand).
     "AdminSystem": "Default",
 
-    // Server console command template executed for kicking. Available placeholders: {userid}, {slot}, {steamid}, {name}, {reason}.
-    "KickCommand": "sw_kick #{userid} \"[AegisAC] {reason}\"",
+    // Server console command template executed for kicking. Available placeholders: {prefix}, {userid}, {slot}, {steamid}, {name}, {reason}.
+    "KickCommand": "sw_kick #{userid} \"[{prefix}] {reason}\"",
 
-    // Server console command template executed for banning when AdminSystem is 'Custom'. Available placeholders: {userid}, {slot}, {steamid}, {name}, {reason}.
-    "BanCommand": "sw_ban #{userid} 0 \"[AegisAC] {reason}\"",
+    // Server console command template executed for banning when AdminSystem is 'Custom'. Available placeholders: {prefix}, {userid}, {slot}, {steamid}, {name}, {reason}.
+    "BanCommand": "sw_ban #{userid} 0 \"[{prefix}] {reason}\"",
 
     // 1. Aimbot, RCS, Doubletap, Inhuman Accuracy & Irregular Behavior module
     "Aimbot": {

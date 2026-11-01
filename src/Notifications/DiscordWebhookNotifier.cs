@@ -30,7 +30,8 @@ public static class DiscordWebhookNotifier
 		string moduleName,
 		string detectionReason,
 		PunishmentType punishment,
-		string evidence = "")
+		string evidence = "",
+		string prefix = "AegisAC")
 	{
 		if (string.IsNullOrWhiteSpace(webhookUrl))
 			return;
@@ -39,6 +40,7 @@ public static class DiscordWebhookNotifier
 		{
 			try
 			{
+				string cleanPrefix = string.IsNullOrWhiteSpace(prefix) ? "AegisAC" : prefix;
 				int accentColor = punishment switch
 				{
 					PunishmentType.Ban => 0xE5485D,
@@ -94,7 +96,7 @@ public static class DiscordWebhookNotifier
 				var components = new List<object>
 				{
 					Text(
-						"### 🛡️ Aegis Anti-Cheat  `APP`\n" +
+						$"### 🛡️ {cleanPrefix} Anti-Cheat  `APP`\n" +
 						"-# CS2 · Server-Sided Protection"
 					),
 
@@ -103,7 +105,7 @@ public static class DiscordWebhookNotifier
 					Text(
 						$"{titleHeader}\n" +
 						$"Player **{EscapeMarkdown(playerName)}** " +
-						"has been flagged by Aegis Anti-Cheat."
+						$"has been flagged by {cleanPrefix} Anti-Cheat."
 					),
 
 					Separator(),
@@ -168,7 +170,7 @@ public static class DiscordWebhookNotifier
 
 				components.Add(
 					Text(
-						"-# AEGIS ANTI-CHEAT FOR CS2 · " +
+						$"-# {cleanPrefix.ToUpperInvariant()} ANTI-CHEAT FOR CS2 · " +
 						$"SERVER-SIDED PROTECTION\n" +
 						$"-# {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm} UTC"
 					)
@@ -187,7 +189,7 @@ public static class DiscordWebhookNotifier
 				var embed = new
 				{
 					title = embedTitle,
-					description = $"Player **{EscapeMarkdown(playerName)}** has been flagged by Aegis Anti-Cheat.",
+					description = $"Player **{EscapeMarkdown(playerName)}** has been flagged by {cleanPrefix} Anti-Cheat.",
 					color = accentColor,
 					fields = new[]
 					{
@@ -198,13 +200,13 @@ public static class DiscordWebhookNotifier
 						new { name = "📋 Detection Details", value = $"`{EscapeInline(detectionReason)}`", @inline = false },
 						new { name = "📊 Incident Evidence", value = $"```text\n{displayEvidence}\n```", @inline = false }
 					},
-					footer = new { text = $"Aegis Anti-Cheat · Server-Sided Protection · {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm} UTC" },
+					footer = new { text = $"{cleanPrefix} Anti-Cheat · Server-Sided Protection · {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm} UTC" },
 					timestamp = DateTimeOffset.UtcNow.ToString("o")
 				};
 
 				var payload = new
 				{
-					username = "Aegis Anti-Cheat",
+					username = $"{cleanPrefix} Anti-Cheat",
 					avatar_url =
 						"https://raw.githubusercontent.com/ressiws/AegisAC/main/.github/assets/logo.jpg",
 

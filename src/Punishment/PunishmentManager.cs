@@ -11,6 +11,7 @@ public sealed class PunishmentManager
 {
 	private readonly ISwiftlyCore _core;
 	private AegisConfig _config;
+	private string Prefix => !string.IsNullOrWhiteSpace(_config.Prefix) ? _config.Prefix : "AegisAC";
 
 	public PunishmentManager(ISwiftlyCore core, AegisConfig config)
 	{
@@ -59,10 +60,10 @@ public sealed class PunishmentManager
 		}
 		else
 		{
-			player.Kick($"[AegisAC] {reason}", default);
+			player.Kick($"[{Prefix}] {reason}", default);
 		}
 
-		Utils.Log($" \x04[AegisAC]\x01 Punished \x07{name}\x01 (Action: \x0FKICK\x01, Reason: {reason})");
+		Utils.Log($" \x04[{Prefix}]\x01 Punished \x07{name}\x01 (Action: \x0FKICK\x01, Reason: {reason})");
 	}
 
 	private void ExecuteBan(IPlayer player, string name, string reason)
@@ -70,30 +71,30 @@ public sealed class PunishmentManager
 		// If SteamID is unauthenticated (flexible mode / connection phase), kick by UserID instead of banning
 		if (player.SteamID == 0 || !player.IsAuthorized)
 		{
-			Utils.Log($" \x04[AegisAC]\x01 Player \x07{name}\x01 has unauthenticated SteamID ({player.SteamID}, authorized={player.IsAuthorized}). Kicking by UserID #{player.UserID} instead of banning.");
-			player.Kick($"[AegisAC] {reason}", default);
+			Utils.Log($" \x04[{Prefix}]\x01 Player \x07{name}\x01 has unauthenticated SteamID ({player.SteamID}, authorized={player.IsAuthorized}). Kicking by UserID #{player.UserID} instead of banning.");
+			player.Kick($"[{Prefix}] {reason}", default);
 			return;
 		}
 
 		string system = _config.AdminSystem?.Trim() ?? "Default";
 		if (string.Equals(system, "T3Admin", StringComparison.OrdinalIgnoreCase))
 		{
-			_core.Engine.ExecuteCommand($"sw_addban {player.SteamID} 0 \"[AegisAC] {Sanitize(reason)}\"");
-			player.Kick($"[AegisAC] {reason}", default);
+			_core.Engine.ExecuteCommand($"sw_addban {player.SteamID} 0 \"[{Prefix}] {Sanitize(reason)}\"");
+			player.Kick($"[{Prefix}] {reason}", default);
 		}
 		else if (!string.IsNullOrWhiteSpace(_config.BanCommand) && (string.Equals(system, "Custom", StringComparison.OrdinalIgnoreCase) || !_config.BanCommand.StartsWith("sw_ban #{userid} 0", StringComparison.OrdinalIgnoreCase)))
 		{
 			string cmd = FormatCommand(_config.BanCommand, player, name, reason);
 			_core.Engine.ExecuteCommand(cmd);
-			player.Kick($"[AegisAC] {reason}", default);
+			player.Kick($"[{Prefix}] {reason}", default);
 		}
 		else // Default: sw_ban #{userid} 0
 		{
-			_core.Engine.ExecuteCommand($"sw_ban #{player.UserID} 0 \"[AegisAC] {Sanitize(reason)}\"");
-			player.Kick($"[AegisAC] {reason}", default);
+			_core.Engine.ExecuteCommand($"sw_ban #{player.UserID} 0 \"[{Prefix}] {Sanitize(reason)}\"");
+			player.Kick($"[{Prefix}] {reason}", default);
 		}
 
-		Utils.Log($" \x04[AegisAC]\x01 Punished \x07{name}\x01 (Action: \x0FBAN\x01, Reason: {reason})");
+		Utils.Log($" \x04[{Prefix}]\x01 Punished \x07{name}\x01 (Action: \x0FBAN\x01, Reason: {reason})");
 	}
 
 	private static string Sanitize(string input)
@@ -109,7 +110,7 @@ public sealed class PunishmentManager
 			.Trim();
 	}
 
-	private static string FormatCommand(string template, IPlayer player, string name, string reason)
+	private string FormatCommand(string template, IPlayer player, string name, string reason)
 	{
 		string sanitizedName = Sanitize(name);
 		string sanitizedReason = Sanitize(reason);
@@ -118,6 +119,8 @@ public sealed class PunishmentManager
 		ulong steamId = player.SteamID;
 
 		return template
+			.Replace("{prefix}", Prefix)
+			.Replace("[AegisAC]", $"[{Prefix}]")
 			.Replace("{userid}", userId.ToString())
 			.Replace("{slot}", slot.ToString())
 			.Replace("{steamid}", steamId.ToString())

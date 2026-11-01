@@ -878,6 +878,18 @@ public class AimlockAndAntiAimTests
         pmCustom.Punish(player, PunishmentType.Ban, "AntiAim", "Spinbot");
         Assert.Single(executedCommands);
         Assert.Equal($"custom_ban {player.SteamID} 9999 AntiAim: Spinbot", executedCommands[0]);
+        executedCommands.Clear();
+
+        // 4. Custom prefix: Prefix = "TugaAC" overrides [AegisAC] without recompilation
+        var configPrefix = new AegisConfig
+        {
+            Prefix = "TugaAC",
+            AdminSystem = "Default"
+        };
+        var pmPrefix = new PunishmentManager(core, configPrefix);
+        pmPrefix.Punish(player, PunishmentType.Ban, "Aimbot", "Rage snap");
+        Assert.Single(executedCommands);
+        Assert.Contains("[TugaAC] Aimbot: Rage snap", executedCommands[0]);
     }
 
     [Fact]
