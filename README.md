@@ -12,6 +12,7 @@
 [![Framework](https://img.shields.io/badge/Framework-SwiftlyS2-orange.svg?style=for-the-badge)](https://swiftlys2.net)
 [![Runtime](https://img.shields.io/badge/.NET-10.0-purple.svg?style=for-the-badge&logo=dotnet)](https://dotnet.microsoft.com/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](LICENSE)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-swisser-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/swisser)
 
 <br/>
 
@@ -42,6 +43,7 @@
 - [Community Calibration & Telemetry](#-aegistelemetry--community-driven-calibration)
 - [Frequently Asked Questions (FAQ)](#-frequently-asked-questions-faq)
 - [Contributing](#-contributing)
+- [Support](#-support)
 - [License](#-license)
 
 ---
@@ -696,6 +698,18 @@ Contributions, bug reports, and suggestions are welcome!
    - Maintain the existing code style: **C# 13 / .NET 10**, strictly in **English**, with meaningful docstrings and zero unnecessary comments.
    - Verify that your changes build cleanly with `dotnet build` and pass all unit tests with `dotnet test`.
    - Commit and submit a Pull Request describing your modifications.
+
+---
+
+## ☕ Support
+
+If you appreciate AegisAC and want to support ongoing research, updates, and maintenance, feel free to buy a coffee:
+
+<p align="center">
+  <a href="https://buymeacoffee.com/swisser">
+    <img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-swisser-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee" />
+  </a>
+</p>
 
 ---
 
