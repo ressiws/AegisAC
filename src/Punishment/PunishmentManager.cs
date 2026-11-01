@@ -85,6 +85,7 @@ public sealed class PunishmentManager
 		{
 			string cmd = FormatCommand(_config.BanCommand, player, name, reason);
 			_core.Engine.ExecuteCommand(cmd);
+			player.Kick($"[AegisAC] {reason}", default);
 		}
 		else // Default: sw_ban #{userid} 0
 		{

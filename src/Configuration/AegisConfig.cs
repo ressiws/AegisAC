@@ -303,14 +303,20 @@ public sealed class TelemetryConfig
 /// </summary>
 public sealed class AntiWallHackConfig
 {
-	[Description("Enable or disable server-side Anti-WallHack entity transmission occlusion.")]
-	public bool Enabled { get; set; } = true;
+	[Description("Enable or disable server-side Anti-WallHack entity transmission occlusion. Disabled by default until validated in shadow mode.")]
+	public bool Enabled { get; set; } = false;
+
+	[Description("Shadow mode: performs all occlusion checks, trace budgets, and telemetry without suppressing network packets. Recommended for initial testing.")]
+	public bool ShadowMode { get; set; } = true;
 
 	[Description("Enable corner-peeking velocity and input lead prediction to prevent pop-in when peeking around corners.")]
 	public bool CornerPrediction { get; set; } = true;
 
-	[Description("Prediction horizon in seconds for corner peeking (0.05 to 0.25).")]
+	[Description("Base prediction horizon in seconds for corner peeking (0.05 to 0.25).")]
 	public float CornerPredictionSeconds { get; set; } = 0.12f;
+
+	[Description("Dynamically scale corner prediction with player network latency (ping) to prevent pop-in for high-ping clients.")]
+	public bool PingAdaptivePrediction { get; set; } = true;
 
 	[Description("Number of ticks an enemy remains visible to a player after breaking line of sight to prevent flickering/pop-in.")]
 	public int VisibleGraceTicks { get; set; } = 12;

@@ -112,9 +112,11 @@
 
     // Server-side Anti-WallHack and network entity transmission occlusion configuration.
     "AntiWallHack": {
-      "Enabled": true,
+      "Enabled": false,
+      "ShadowMode": true,
       "CornerPrediction": true,
       "CornerPredictionSeconds": 0.12,
+      "PingAdaptivePrediction": true,
       "VisibleGraceTicks": 12,
       "MaxTracesPerTick": 2048
     },

@@ -294,10 +294,11 @@ internal sealed class AntiAimDetector
         if ((isDeterministicNonFinite || state.UntrustedDetections >= 2) && (now - state.LastUntrustedAlertTime).TotalSeconds >= 60.0)
         {
             state.LastUntrustedAlertTime = now;
+            int incidentCount = state.UntrustedDetections;
             state.UntrustedDetections = 0;
             StatUntrustedDetections++;
 
-            string details = $"Anti-Untrusted exploit detected: {reason}. (#{state.UntrustedDetections})";
+            string details = $"Anti-Untrusted exploit detected: {reason}. (#{incidentCount})";
             _logger?.LogWarning("[AegisAC] [AntiAim] {Name} {Details}", playerName, details);
             _onViolation?.Invoke(player, "Untrusted", details, _config.Punishment);
         }

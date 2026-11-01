@@ -27,7 +27,7 @@ internal sealed class OcclusionTracer
 {
 	private const float DefaultPadding = 24.0f;
 	private readonly ISwiftlyCore _core;
-	private readonly AntiWallHackConfig _config;
+	private AntiWallHackConfig _config;
 
 	private readonly Vector[][] _samplePoints = Enumerable.Range(0, 64).Select(_ => new Vector[12]).ToArray();
 	private readonly bool[] _samplesReady = new bool[64];
@@ -51,6 +51,8 @@ internal sealed class OcclusionTracer
 
 	private static bool IsSolidOccluder(CEntityInstance entity) =>
 		entity.IsValid && entity is not CCSPlayerPawn && entity is not CCSPlayerController && entity is not CEconEntity && entity.DesignerName != "player";
+
+	public void UpdateConfig(AntiWallHackConfig config) => _config = config;
 
 	public void Reset()
 	{
@@ -85,7 +87,13 @@ internal sealed class OcclusionTracer
 		if (_config.CornerPrediction && TracesThisTick < maxTracesPerTick)
 		{
 			Vector3 vel3 = new(viewer.Velocity.X, viewer.Velocity.Y, viewer.Velocity.Z);
-			Vector3 lead3 = CornerPredictor.CalculateLead(vel3, viewer.Angles.Yaw, viewer.Buttons, _config.CornerPredictionSeconds, 32.0f);
+			float seconds = _config.CornerPredictionSeconds;
+			if (_config.PingAdaptivePrediction && viewer.Player?.Controller is { } ctrl)
+			{
+				float pingSec = Math.Clamp(ctrl.Ping / 1000.0f, 0f, 0.20f);
+				seconds += pingSec;
+			}
+			Vector3 lead3 = CornerPredictor.CalculateLead(vel3, viewer.Angles.Yaw, viewer.Buttons, seconds, 32.0f);
 			if (lead3.Length() > 0.05f)
 			{
 				_traceParams.EntitiesToIgnore.Clear();

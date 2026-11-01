@@ -58,21 +58,32 @@ public static class DiscordWebhookNotifier
 						"⚪ **LOGGED ONLY** — No Punishment"
 				};
 
-				string riskLevel = moduleName switch
+				string titleHeader = punishment switch
 				{
-					"DllInjection" or "CVarScanner" or "Anti-Untrusted" or "Exploits" =>
-						"🔴 **CRITICAL RISK (Deterministic Violation)**",
-					"SilentAim" or "Aimbot" or "AntiAim" or "Aimlock" =>
-						"🟠 **HIGH RISK (Confirmed Multi-Incident)**",
-					_ =>
-						"🟡 **MEDIUM RISK (Heuristic Anomaly)**"
+					PunishmentType.Ban => "## 🚨 CHEATER DETECTED & BANNED",
+					PunishmentType.Kick => "## ⚠️ SUSPICIOUS BEHAVIOR — KICKED",
+					_ => "## 🔍 SUSPICIOUS ACTIVITY FLAGGED"
+				};
+
+				string embedTitle = punishment switch
+				{
+					PunishmentType.Ban => "🚨 CHEATER BANNED — Aegis Anti-Cheat",
+					PunishmentType.Kick => "⚠️ PLAYER KICKED — Aegis Anti-Cheat",
+					_ => "🔍 SUSPICIOUS TELEMETRY — Aegis Anti-Cheat"
+				};
+
+				string riskLevel = punishment switch
+				{
+					PunishmentType.Ban => "🔴 **ACTION TAKEN — BAN ENFORCED**",
+					PunishmentType.Kick => "🟠 **ACTION TAKEN — PLAYER KICKED**",
+					_ => "⚪ **OBSERVATION MODE — TELEMETRY ONLY**"
 				};
 
 				string verificationTier = moduleName switch
 				{
 					"DllInjection" or "CVarScanner" or "Anti-Untrusted" or "Exploits" => "Deterministic Protocol Invariant",
-					"SilentAim" or "Aimbot" or "AntiAim" or "Aimlock" => "Multi-Incident Behavioral Consensus",
-					_ => "Heuristic Telemetry Threshold"
+					"SilentAim" or "Aimbot" or "AntiAim" or "Aimlock" => "Behavioral Trajectory Analysis",
+					_ => "Statistical / Timing Telemetry"
 				};
 
 				string steamValue = steamId > 0
@@ -90,7 +101,7 @@ public static class DiscordWebhookNotifier
 					Separator(),
 
 					Text(
-						"## 🚨 CHEATER DETECTED\n" +
+						$"{titleHeader}\n" +
 						$"Player **{EscapeMarkdown(playerName)}** " +
 						"has been flagged by Aegis Anti-Cheat."
 					),
@@ -175,7 +186,7 @@ public static class DiscordWebhookNotifier
 
 				var embed = new
 				{
-					title = "🚨 CHEATER DETECTED — Aegis Anti-Cheat",
+					title = embedTitle,
 					description = $"Player **{EscapeMarkdown(playerName)}** has been flagged by Aegis Anti-Cheat.",
 					color = accentColor,
 					fields = new[]

@@ -204,6 +204,7 @@ public class AimlockAndAntiAimTests
         // Per-player 60s cooldown latch ensures 50 malformed packets produce exactly 1 alert, preventing log/webhook DoS!
         Assert.Single(alerts);
         Assert.Contains("Untrusted", alerts[0].Mode);
+        Assert.DoesNotContain("(#0)", alerts[0].Details);
 
         // 2. Legitimate player with combat aim punch / flinch camera roll (roll = -5.91 deg, 18.5 deg)
         // must NEVER trigger Anti-Untrusted!
@@ -419,6 +420,43 @@ public class AimlockAndAntiAimTests
         // Player lands without jumping on the landing tick
         movement.RecordBhopStep(5, null, "LegitPlayer", isAirborne: false, jumpedOnLandingTick: false);
 
+        Assert.Empty(alerts);
+    }
+
+    [Fact]
+    public void Movement_WalkingOnGroundBetweenJumps_ResetsBhopStreak()
+    {
+        var alerts = new List<(string Mode, string Reason)>();
+        var movement = new MovementDetector(
+            null, null,
+            new MovementConfig { Enabled = true, EnableBhopCheck = true, BhopStreakThreshold = 5 },
+            null,
+            (p, mode, reason, pun) => alerts.Add((mode, reason)),
+            () => false);
+
+        // Player does 3 consecutive hops
+        for (int hop = 0; hop < 3; hop++)
+        {
+            for (int air = 0; air < 5; air++)
+                movement.RecordBhopStep(1, null, "Runner", isAirborne: true);
+            movement.RecordBhopStep(1, null, "Runner", isAirborne: false, jumpedOnLandingTick: true);
+        }
+
+        // Now player walks/runs on the ground for 10 ticks without jumping
+        for (int ground = 0; ground < 10; ground++)
+        {
+            movement.RecordBhopStep(1, null, "Runner", isAirborne: false, jumpedOnLandingTick: false);
+        }
+
+        // Player does another 3 consecutive hops (total 6, but split by ground walking!)
+        for (int hop = 0; hop < 3; hop++)
+        {
+            for (int air = 0; air < 5; air++)
+                movement.RecordBhopStep(1, null, "Runner", isAirborne: true);
+            movement.RecordBhopStep(1, null, "Runner", isAirborne: false, jumpedOnLandingTick: true);
+        }
+
+        // Must NOT trigger bhop alert because the streak was broken by walking on the ground!
         Assert.Empty(alerts);
     }
 

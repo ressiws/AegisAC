@@ -22,8 +22,8 @@ internal sealed unsafe class TransmitHook : IDisposable
 		nint indices,
 		int entityCount);
 
-	private const int PlayerSlotOffset = 0x240;
-	private const int FullUpdateOffset = 0x244;
+	private static int _playerSlotOffset = 0x240;
+	private static int _fullUpdateOffset = 0x244;
 	public const int MaxEntityCount = 16384;
 
 	private readonly IUnmanagedFunction<CheckTransmitDelegate>? _function;
@@ -36,6 +36,18 @@ internal sealed unsafe class TransmitHook : IDisposable
 	{
 		try
 		{
+			int slotOff = core.GameData.GetOffset("CTransmitInfo::PlayerSlot");
+			if (slotOff > 0)
+			{
+				_playerSlotOffset = slotOff;
+			}
+
+			int fullOff = core.GameData.GetOffset("CTransmitInfo::FullUpdate");
+			if (fullOff > 0)
+			{
+				_fullUpdateOffset = fullOff;
+			}
+
 			nint table = core.Memory.GetVTableAddress("server", "CSource2GameEntities") ?? 0;
 			if (table == 0)
 			{
@@ -75,12 +87,12 @@ internal sealed unsafe class TransmitHook : IDisposable
 		primary = 0;
 		suppressed = 0;
 
-		if (infoPtr == 0 || *((byte*)infoPtr + FullUpdateOffset) != 0)
+		if (infoPtr == 0 || *((byte*)infoPtr + _fullUpdateOffset) != 0)
 		{
 			return false;
 		}
 
-		slot = *(int*)((byte*)infoPtr + PlayerSlotOffset);
+		slot = *(int*)((byte*)infoPtr + _playerSlotOffset);
 		if (slot is < 0 or >= 64)
 		{
 			return false;

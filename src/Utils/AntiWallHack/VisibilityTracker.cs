@@ -96,7 +96,7 @@ internal sealed class PairVisibilityTracker
 internal sealed class VisibilityTracker
 {
 	private readonly ISwiftlyCore _core;
-	private readonly AntiWallHackConfig _config;
+	private AntiWallHackConfig _config;
 	private readonly OcclusionTracer _tracer;
 	private readonly PairVisibilityTracker _pairs = new();
 
@@ -115,6 +115,24 @@ internal sealed class VisibilityTracker
 		_core = core;
 		_config = config;
 		_tracer = tracer;
+	}
+
+	public void UpdateConfig(AntiWallHackConfig config)
+	{
+		_config = config;
+		_tracer.UpdateConfig(config);
+	}
+
+	public void ResetPlayer(int slot)
+	{
+		if (slot >= 0 && slot < 64)
+		{
+			_players[slot] = null;
+			_identities[slot] = default;
+			_evaluated[slot] = false;
+			_hiddenBundles[slot].Clear();
+			_pairs.Invalidate(slot, _frameTick, _config.VisibleGraceTicks);
+		}
 	}
 
 	public void Reset()

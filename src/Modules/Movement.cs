@@ -183,8 +183,8 @@ internal sealed class MovementDetector
             {
                 if (b.Accessor.HasField("buttons_pb"))
                 {
-                    // IN_JUMP is bit 1 (2UL): check Buttonstate1 (held) and Buttonstate2 (pressed)
-                    if ((b.ButtonsPb.Buttonstate1 & 2UL) != 0 || (b.ButtonsPb.Buttonstate2 & 2UL) != 0)
+                    // IN_JUMP is bit 1 (2UL): check Buttonstate2 (newly pressed button this tick)
+                    if ((b.ButtonsPb.Buttonstate2 & 2UL) != 0)
                     {
                         jumpedThisTick = true;
                     }
@@ -276,25 +276,37 @@ internal sealed class MovementDetector
         }
         else
         {
-            if (state.WasAirborne && state.AirTicks >= 4)
+            if (state.WasAirborne)
             {
-                if (jumpedOnLandingTick)
+                if (state.AirTicks >= 4)
                 {
-                    state.ConsecutivePerfBhops++;
-                    if (state.ConsecutivePerfBhops >= bhopThreshold)
+                    if (jumpedOnLandingTick)
+                    {
+                        state.ConsecutivePerfBhops++;
+                        if (state.ConsecutivePerfBhops >= bhopThreshold)
+                        {
+                            state.ConsecutivePerfBhops = 0;
+                            StatBhopDetections++;
+                            string details = $"{bhopThreshold} consecutive frame-perfect bunnyhops without ground friction loss.";
+                            _logger?.LogWarning("[AegisAC] [Movement] {Name} {Details}", playerName, details);
+                            _onViolation?.Invoke(player, "Bhop", details, _config.Punishment);
+                            return true;
+                        }
+                    }
+                    else
                     {
                         state.ConsecutivePerfBhops = 0;
-                        StatBhopDetections++;
-                        string details = $"{bhopThreshold} consecutive frame-perfect bunnyhops without ground friction loss.";
-                        _logger?.LogWarning("[AegisAC] [Movement] {Name} {Details}", playerName, details);
-                        _onViolation?.Invoke(player, "Bhop", details, _config.Punishment);
-                        return true;
                     }
                 }
                 else
                 {
                     state.ConsecutivePerfBhops = 0;
                 }
+            }
+            else
+            {
+                // Player is grounded and walking/running on the ground: reset consecutive bhop counter
+                state.ConsecutivePerfBhops = 0;
             }
             state.AirTicks = 0;
             state.WasAirborne = false;

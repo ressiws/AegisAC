@@ -20,7 +20,7 @@ internal sealed class AntiWallHackDetector : IDisposable
 	private AntiWallHackConfig _config;
 	private readonly OcclusionTracer _tracer;
 	private readonly VisibilityTracker _tracker;
-	private readonly TransmitHook? _hook;
+	private TransmitHook? _hook;
 
 	private IConVar? _dontTransmitCVar;
 	private string? _previousDontTransmitVal;
@@ -40,29 +40,59 @@ internal sealed class AntiWallHackDetector : IDisposable
 		_tracer = new OcclusionTracer(core, config);
 		_tracker = new VisibilityTracker(core, config, _tracer);
 
-		try
+		if (_config.Enabled)
 		{
-			ConfigureTransmitCVar();
-			_hook = new TransmitHook(core, OnPostTransmit, OnHookFailure);
-			if (_hook.IsHooked)
+			try
 			{
-				_core.Logger.LogInformation("[AegisAC-AWH] AntiWallHack network occlusion hook installed successfully.");
+				ConfigureTransmitCVar();
+				_hook = new TransmitHook(core, OnPostTransmit, OnHookFailure);
+				if (_hook.IsHooked)
+				{
+					_core.Logger.LogInformation("[AegisAC-AWH] AntiWallHack network occlusion hook installed successfully (ShadowMode={ShadowMode}).", _config.ShadowMode);
+				}
+				else
+				{
+					_core.Logger.LogWarning("[AegisAC-AWH] AntiWallHack hook could not be initialized (unmanaged function not found).");
+				}
 			}
-			else
+			catch (Exception ex)
 			{
-				_core.Logger.LogWarning("[AegisAC-AWH] AntiWallHack hook could not be initialized (unmanaged function not found).");
+				_core.Logger.LogWarning(ex, "[AegisAC-AWH] AntiWallHack initialization failed; network occlusion disabled.");
+				_hook = null;
 			}
-		}
-		catch (Exception ex)
-		{
-			_core.Logger.LogWarning(ex, "[AegisAC-AWH] AntiWallHack initialization failed; network occlusion disabled.");
-			_hook = null;
 		}
 	}
 
 	public void UpdateConfig(AntiWallHackConfig config)
 	{
+		bool wasEnabled = _config.Enabled;
 		_config = config;
+		_tracer.UpdateConfig(config);
+		_tracker.UpdateConfig(config);
+
+		if (!_config.Enabled && wasEnabled)
+		{
+			_hook?.Dispose();
+			_hook = null;
+			RestoreTransmitCVar();
+			_tracker.Reset();
+		}
+		else if (_config.Enabled && !wasEnabled && _hook == null)
+		{
+			try
+			{
+				ConfigureTransmitCVar();
+				_hook = new TransmitHook(_core, OnPostTransmit, OnHookFailure);
+				if (_hook.IsHooked)
+				{
+					_core.Logger.LogInformation("[AegisAC-AWH] AntiWallHack hook installed upon reload (ShadowMode={ShadowMode}).", _config.ShadowMode);
+				}
+			}
+			catch (Exception ex)
+			{
+				_core.Logger.LogWarning(ex, "[AegisAC-AWH] AntiWallHack initialization failed on reload.");
+			}
+		}
 	}
 
 	public void OnRoundStart()
@@ -79,7 +109,7 @@ internal sealed class AntiWallHackDetector : IDisposable
 
 	public void ResetPlayer(int slot)
 	{
-		_tracker.Reset();
+		_tracker.ResetPlayer(slot);
 	}
 
 	public void ResetAll()
@@ -106,6 +136,18 @@ internal sealed class AntiWallHackDetector : IDisposable
 		catch (Exception ex)
 		{
 			_core.Logger.LogDebug(ex, "[AegisAC-AWH] sv_enable_donttransmit not configurable.");
+		}
+	}
+
+	private void RestoreTransmitCVar()
+	{
+		if (_dontTransmitCVar != null && _previousDontTransmitVal != null)
+		{
+			try
+			{
+				_dontTransmitCVar.ValueAsString = _previousDontTransmitVal;
+			}
+			catch { }
 		}
 	}
 
@@ -136,6 +178,12 @@ internal sealed class AntiWallHackDetector : IDisposable
 			{
 				_tracker.EvaluateViewer(recipient, tick);
 			}
+		}
+
+		// When running in Shadow Mode, we compute occlusion and metrics for observation without withholding packets
+		if (_config.ShadowMode)
+		{
+			return;
 		}
 
 		// Second pass: apply suppression masks to entities hidden from each viewer
@@ -179,8 +227,8 @@ internal sealed class AntiWallHackDetector : IDisposable
 
 	public string Stats()
 	{
-		string hookState = _hook?.IsHooked == true ? (_faulted ? "FAULTED" : "ACTIVE") : "UNAVAILABLE";
-		return $"AntiWallHack: Enabled={_config.Enabled}, State={hookState}, HiddenPairs={HiddenPairs}, Traces={TracesThisTick}, Skips={BudgetSkipsThisTick}, GraceTicks={_config.VisibleGraceTicks}, CornerPrediction={_config.CornerPrediction}";
+		string hookState = _hook?.IsHooked == true ? (_faulted ? "FAULTED" : (_config.ShadowMode ? "SHADOW" : "ACTIVE")) : "DISABLED";
+		return $"AntiWallHack: Enabled={_config.Enabled}, ShadowMode={_config.ShadowMode}, State={hookState}, HiddenPairs={HiddenPairs}, Traces={TracesThisTick}, Skips={BudgetSkipsThisTick}, GraceTicks={_config.VisibleGraceTicks}, CornerPrediction={_config.CornerPrediction}";
 	}
 
 	public void Dispose()
@@ -190,14 +238,6 @@ internal sealed class AntiWallHackDetector : IDisposable
 
 		_hook?.Dispose();
 		_tracker.Reset();
-
-		if (_dontTransmitCVar != null && _previousDontTransmitVal != null)
-		{
-			try
-			{
-				_dontTransmitCVar.ValueAsString = _previousDontTransmitVal;
-			}
-			catch { }
-		}
+		RestoreTransmitCVar();
 	}
 }
