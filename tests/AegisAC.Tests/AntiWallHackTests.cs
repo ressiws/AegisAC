@@ -146,4 +146,84 @@ public class AntiWallHackTests
 		tracker.BeginTick();
 		Assert.True(tracker.NeedsQuery(viewer, target, 220));
 	}
+
+	[Fact]
+	public void SmokeOcclusionTracker_RayThroughSmoke_IsBlocked()
+	{
+		var tracker = new SmokeOcclusionTracker();
+		var smokeCenter = new Vector3(500f, 500f, 0f);
+		tracker.OnSmokeDetonate(smokeCenter, 10.0f);
+
+		// Active smoke at time 15.0s (age = 5.0s, fully formed)
+		var rayStart = new Vector3(0f, 500f, 15f);
+		var rayEnd = new Vector3(1000f, 500f, 15f);
+
+		bool blocked = tracker.IsRayBlockedBySmoke(rayStart, rayEnd, 15.0f, 145.0f);
+		Assert.True(blocked, "Ray directly passing through smoke center should be occluded");
+	}
+
+	[Fact]
+	public void SmokeOcclusionTracker_RayFarAway_IsNotBlocked()
+	{
+		var tracker = new SmokeOcclusionTracker();
+		var smokeCenter = new Vector3(500f, 500f, 0f);
+		tracker.OnSmokeDetonate(smokeCenter, 10.0f);
+
+		// Ray 300 units away from smoke
+		var rayStart = new Vector3(0f, 900f, 15f);
+		var rayEnd = new Vector3(1000f, 900f, 15f);
+
+		bool blocked = tracker.IsRayBlockedBySmoke(rayStart, rayEnd, 15.0f, 145.0f);
+		Assert.False(blocked, "Ray passing outside smoke radius should not be occluded");
+	}
+
+	[Fact]
+	public void SmokeOcclusionTracker_HeGrenade_DissipatesSmokeTemporarily()
+	{
+		var tracker = new SmokeOcclusionTracker();
+		var smokeCenter = new Vector3(500f, 500f, 0f);
+		tracker.OnSmokeDetonate(smokeCenter, 10.0f);
+
+		var rayStart = new Vector3(0f, 500f, 15f);
+		var rayEnd = new Vector3(1000f, 500f, 15f);
+
+		// HE grenade detonates inside the smoke at 14.0s
+		tracker.OnHeDetonate(smokeCenter + new Vector3(10f, 0f, 0f), 14.0f);
+
+		// During the 3s dissipation window (e.g. 15.0s), smoke is blown open
+		bool blockedWhileDissipated = tracker.IsRayBlockedBySmoke(rayStart, rayEnd, 15.0f, 145.0f);
+		Assert.False(blockedWhileDissipated, "Smoke cleared by HE grenade should not block vision during dissipation");
+
+		// After dissipation window expires (e.g. 17.5s), smoke should seal back
+		bool blockedAfterWindow = tracker.IsRayBlockedBySmoke(rayStart, rayEnd, 17.5f, 145.0f);
+		Assert.True(blockedAfterWindow, "Smoke should re-occlude after HE dissipation window");
+	}
+
+	[Fact]
+	public void SmokeOcclusionTracker_FadingAndExpiredSmoke_DoesNotBlock()
+	{
+		var tracker = new SmokeOcclusionTracker();
+		var smokeCenter = new Vector3(500f, 500f, 0f);
+		tracker.OnSmokeDetonate(smokeCenter, 10.0f);
+
+		var rayStart = new Vector3(0f, 500f, 15f);
+		var rayEnd = new Vector3(1000f, 500f, 15f);
+
+		// At 10.5s (age 0.5s < 1.2s fade-in), smoke is not yet dense
+		Assert.False(tracker.IsRayBlockedBySmoke(rayStart, rayEnd, 10.5f, 145.0f));
+
+		// At 27.0s (age 17.0s > 16.5s fade-out), smoke is dissipated
+		Assert.False(tracker.IsRayBlockedBySmoke(rayStart, rayEnd, 27.0f, 145.0f));
+	}
+
+	[Fact]
+	public void SmokeOcclusionTracker_OnRoundReset_ClearsActiveSmokes()
+	{
+		var tracker = new SmokeOcclusionTracker();
+		tracker.OnSmokeDetonate(new Vector3(100f, 100f, 0f), 5.0f);
+		Assert.Equal(1, tracker.ActiveSmokeCount);
+
+		tracker.OnRoundReset();
+		Assert.Equal(0, tracker.ActiveSmokeCount);
+	}
 }

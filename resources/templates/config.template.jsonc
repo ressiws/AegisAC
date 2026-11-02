@@ -120,6 +120,12 @@
       "CornerPrediction": true,
       "CornerPredictionSeconds": 0.12,
       "PingAdaptivePrediction": true,
+      "TargetPrediction": true,
+      "SmokeOcclusion": true,
+      "SmokeRadius": 145.0,
+      "CombatReveal": true,
+      "CombatRevealDistance": 1000.0,
+      "EnableCulling": true,
       "VisibleGraceTicks": 12,
       "MaxTracesPerTick": 2048
     },

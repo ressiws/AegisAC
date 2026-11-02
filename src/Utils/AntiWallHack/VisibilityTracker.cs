@@ -104,6 +104,7 @@ internal sealed class VisibilityTracker
 	private readonly List<CEntityInstance>[] _hiddenBundles = Enumerable.Range(0, 64).Select(_ => new List<CEntityInstance>()).ToArray();
 	private readonly bool[] _evaluated = new bool[64];
 	private readonly (ulong Session, uint Pawn, byte Team)[] _identities = new (ulong, uint, byte)[64];
+	private readonly long[] _combatRevealUntilTick = new long[64];
 
 	private int _frameTick = -1;
 	private bool _warnedButtons;
@@ -130,8 +131,17 @@ internal sealed class VisibilityTracker
 			_players[slot] = null;
 			_identities[slot] = default;
 			_evaluated[slot] = false;
+			_combatRevealUntilTick[slot] = 0;
 			_hiddenBundles[slot].Clear();
 			_pairs.Invalidate(slot, _frameTick, _config.VisibleGraceTicks);
+		}
+	}
+
+	public void OnWeaponFired(int slot, int currentTick)
+	{
+		if (slot >= 0 && slot < 64)
+		{
+			_combatRevealUntilTick[slot] = currentTick + 15;
 		}
 	}
 
@@ -141,6 +151,7 @@ internal sealed class VisibilityTracker
 		Array.Clear(_players);
 		Array.Clear(_identities);
 		Array.Clear(_evaluated);
+		Array.Clear(_combatRevealUntilTick);
 		_pairs.Reset();
 		foreach (var list in _hiddenBundles)
 		{
@@ -277,6 +288,19 @@ internal sealed class VisibilityTracker
 			if (target == null || other == slot || target.Team == viewer!.Team)
 			{
 				continue;
+			}
+
+			// Combat reveal: if target recently fired weapon within audible distance, reveal immediately
+			if (_config.CombatReveal && tick <= _combatRevealUntilTick[other])
+			{
+				Vector toTarget = target.Origin - viewer!.Origin;
+				float distSq = toTarget.X * toTarget.X + toTarget.Y * toTarget.Y + toTarget.Z * toTarget.Z;
+				float maxDist = _config.CombatRevealDistance;
+				if (distSq <= maxDist * maxDist)
+				{
+					_pairs.CompleteQuery(slot, other, tick, _config.VisibleGraceTicks, OcclusionResult.Visible);
+					continue;
+				}
 			}
 
 			if (_pairs.NeedsQuery(slot, other, tick))

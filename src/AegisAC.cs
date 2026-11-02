@@ -356,6 +356,7 @@ public sealed class AegisAC : BasePlugin
 
 		if (player is { IsValid: true })
 		{
+			_antiWallHack?.OnWeaponFired(player.PlayerID, CurrentTick);
 			_detector.OnWeaponFire(
 				player,
 				e.Weapon ?? "",
@@ -413,6 +414,15 @@ public sealed class AegisAC : BasePlugin
 	{
 		Vector center = new(e.X, e.Y, e.Z);
 		_triggerbot.OnSmokeDetonate(center);
+		_antiWallHack?.OnSmokeDetonate(center, (float)Core.Engine.GlobalVars.CurrentTime);
+		return HookResult.Continue;
+	}
+
+	[GameEventHandler(HookMode.Post)]
+	public HookResult OnHegrenadeDetonate(EventHegrenadeDetonate e)
+	{
+		Vector center = new(e.X, e.Y, e.Z);
+		_antiWallHack?.OnHeDetonate(center, (float)Core.Engine.GlobalVars.CurrentTime);
 		return HookResult.Continue;
 	}
 

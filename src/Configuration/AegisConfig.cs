@@ -318,6 +318,24 @@ public sealed class AntiWallHackConfig
 	[Description("Dynamically scale corner prediction with player network latency (ping) to prevent pop-in for high-ping clients.")]
 	public bool PingAdaptivePrediction { get; set; } = true;
 
+	[Description("Enable target velocity extrapolation to eliminate peeker's advantage pop-in for enemies running around corners.")]
+	public bool TargetPrediction { get; set; } = true;
+
+	[Description("Enable volumetric smoke grenade occlusion to block enemy ESP/wallhacks through smoke clouds.")]
+	public bool SmokeOcclusion { get; set; } = true;
+
+	[Description("Radius in units of dense smoke grenade occlusion spheres (default: 145.0 units).")]
+	public float SmokeRadius { get; set; } = 145.0f;
+
+	[Description("Immediately reveal shooting enemies within audible distance to synchronize muzzle flashes and gunshot combat.")]
+	public bool CombatReveal { get; set; } = true;
+
+	[Description("Maximum combat reveal distance in units for weapon gunfire (default: 1000.0 units).")]
+	public float CombatRevealDistance { get; set; } = 1000.0f;
+
+	[Description("Enable FOV back-angle and distance ray culling to optimize trace budgets in full servers.")]
+	public bool EnableCulling { get; set; } = true;
+
 	[Description("Number of ticks an enemy remains visible to a player after breaking line of sight to prevent flickering/pop-in.")]
 	public int VisibleGraceTicks { get; set; } = 12;
 

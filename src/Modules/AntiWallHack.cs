@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
 using SwiftlyS2.Shared;
 using SwiftlyS2.Shared.Convars;
+using SwiftlyS2.Shared.Natives;
 using AegisAC.Configuration;
 using AegisAC.Utilities.AntiWallHack;
 
@@ -18,6 +19,7 @@ internal sealed class AntiWallHackDetector : IDisposable
 {
 	private readonly ISwiftlyCore _core;
 	private AntiWallHackConfig _config;
+	private readonly SmokeOcclusionTracker _smokeTracker = new();
 	private readonly OcclusionTracer _tracer;
 	private readonly VisibilityTracker _tracker;
 	private TransmitHook? _hook;
@@ -37,7 +39,7 @@ internal sealed class AntiWallHackDetector : IDisposable
 	{
 		_core = core;
 		_config = config;
-		_tracer = new OcclusionTracer(core, config);
+		_tracer = new OcclusionTracer(core, config, _smokeTracker);
 		_tracker = new VisibilityTracker(core, config, _tracer);
 
 		if (_config.Enabled)
@@ -98,12 +100,14 @@ internal sealed class AntiWallHackDetector : IDisposable
 	public void OnRoundStart()
 	{
 		_roundEnded = false;
+		_smokeTracker.OnRoundReset();
 		_tracker.Reset();
 	}
 
 	public void OnRoundEnd()
 	{
 		_roundEnded = true;
+		_smokeTracker.OnRoundReset();
 		_tracker.Reset();
 	}
 
@@ -114,6 +118,7 @@ internal sealed class AntiWallHackDetector : IDisposable
 
 	public void ResetAll()
 	{
+		_smokeTracker.OnRoundReset();
 		_tracker.Reset();
 	}
 
@@ -121,8 +126,18 @@ internal sealed class AntiWallHackDetector : IDisposable
 	{
 		_roundEnded = false;
 		ConfigureTransmitCVar();
+		_smokeTracker.OnRoundReset();
 		_tracker.Reset();
 	}
+
+	public void OnSmokeDetonate(Vector center, float gameTime) =>
+		_smokeTracker.OnSmokeDetonate(new System.Numerics.Vector3(center.X, center.Y, center.Z), gameTime);
+
+	public void OnHeDetonate(Vector center, float gameTime) =>
+		_smokeTracker.OnHeDetonate(new System.Numerics.Vector3(center.X, center.Y, center.Z), gameTime);
+
+	public void OnWeaponFired(int slot, int currentTick) =>
+		_tracker.OnWeaponFired(slot, currentTick);
 
 	public void OnGameFrame(int tick)
 	{
@@ -235,7 +250,7 @@ internal sealed class AntiWallHackDetector : IDisposable
 	public string Stats()
 	{
 		string hookState = _hook?.IsHooked == true ? (_faulted ? "FAULTED" : (_config.ShadowMode ? "SHADOW" : "ACTIVE")) : "DISABLED";
-		return $"AntiWallHack: Enabled={_config.Enabled}, ShadowMode={_config.ShadowMode}, State={hookState}, HiddenPairs={HiddenPairs}, Traces={TracesThisTick}, Skips={BudgetSkipsThisTick}, GraceTicks={_config.VisibleGraceTicks}, CornerPrediction={_config.CornerPrediction}";
+		return $"AntiWallHack: Enabled={_config.Enabled}, ShadowMode={_config.ShadowMode}, State={hookState}, HiddenPairs={HiddenPairs}, Traces={TracesThisTick}, Skips={BudgetSkipsThisTick}, Smokes={_smokeTracker.ActiveSmokeCount}, GraceTicks={_config.VisibleGraceTicks}, CornerPred={_config.CornerPrediction}, TargetPred={_config.TargetPrediction}, SmokeOcc={_config.SmokeOcclusion}, CombatRev={_config.CombatReveal}";
 	}
 
 	public void Dispose()
