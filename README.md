@@ -12,6 +12,7 @@
 [![Framework](https://img.shields.io/badge/Framework-SwiftlyS2-orange.svg?style=for-the-badge)](https://swiftlys2.net)
 [![Runtime](https://img.shields.io/badge/.NET-10.0-purple.svg?style=for-the-badge&logo=dotnet)](https://dotnet.microsoft.com/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](LICENSE)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/GCR8CCcPmZ)
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-swisser-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/swisser)
 
 <br/>
@@ -43,7 +44,7 @@
 - [Community Calibration & Telemetry](#-aegistelemetry--community-driven-calibration)
 - [Frequently Asked Questions (FAQ)](#-frequently-asked-questions-faq)
 - [Contributing](#-contributing)
-- [Support](#-support)
+- [Support & Community](#-support--community)
 - [License](#-license)
 
 ---
@@ -704,7 +705,15 @@ Contributions, bug reports, and suggestions are welcome!
 
 ---
 
-## ☕ Support
+## ☕ Support & Community
+
+Need help, want to discuss detections, or share false positive calibration data? Join our Discord community:
+
+<p align="center">
+  <a href="https://discord.gg/GCR8CCcPmZ">
+    <img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join Discord" />
+  </a>
+</p>
 
 If you appreciate AegisAC and want to support ongoing research, updates, and maintenance, feel free to buy a coffee:
 
