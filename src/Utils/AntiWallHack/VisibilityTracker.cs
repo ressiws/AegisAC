@@ -412,7 +412,7 @@ internal sealed class VisibilityTracker
 	}
 
 	private static bool IsAlive(IPlayer player, CCSPlayerPawn? pawn) =>
-		player.IsValid && pawn is { IsValid: true } && pawn.Health > 0 && pawn.LifeState == 0;
+		player.IsValid && pawn is { IsValid: true } && pawn.Health > 0 && pawn.LifeState == 0 && !pawn.IsSpawning && player.Controller is { IsValid: true } controller && pawn.Controller.Value?.Address == controller.Address && controller.PlayerPawn.Value?.Address == pawn.Address;
 
 	private static bool IsEligibleViewer(PlayerSnapshot? viewer) =>
 		viewer != null && IsAlive(viewer.Player, viewer.Pawn) && !viewer.Player.IsFakeClient;

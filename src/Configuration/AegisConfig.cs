@@ -336,6 +336,9 @@ public sealed class AntiWallHackConfig
 	[Description("Enable FOV back-angle and distance ray culling to optimize trace budgets in full servers.")]
 	public bool EnableCulling { get; set; } = true;
 
+	[Description("sv_enable_donttransmit convar mode: '1' sends explicit client entity deletions so wallhacks cannot find hidden players, '0' uses legacy client dormancy, or 'preserve' to leave untouched.")]
+	public string TransmitCVarMode { get; set; } = "1";
+
 	[Description("Number of ticks an enemy remains visible to a player after breaking line of sight to prevent flickering/pop-in.")]
 	public int VisibleGraceTicks { get; set; } = 12;
 

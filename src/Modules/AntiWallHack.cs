@@ -34,6 +34,7 @@ internal sealed class AntiWallHackDetector : IDisposable
 	public int HiddenPairs => _tracker.HiddenPairsCount;
 	public int TracesThisTick => _tracer.TracesThisTick;
 	public int BudgetSkipsThisTick => _tracer.BudgetSkipsThisTick;
+	public int WithheldEntitiesThisTick { get; private set; }
 	public bool TeammatesAreEnemies
 	{
 		get => _tracker.TeammatesAreEnemies;
@@ -153,11 +154,17 @@ internal sealed class AntiWallHackDetector : IDisposable
 	{
 		try
 		{
+			if (string.Equals(_config.TransmitCVarMode, "preserve", StringComparison.OrdinalIgnoreCase))
+			{
+				return;
+			}
+
 			_dontTransmitCVar = _core.ConVar.FindAsString("sv_enable_donttransmit");
 			if (_dontTransmitCVar != null)
 			{
 				_previousDontTransmitVal ??= _dontTransmitCVar.ValueAsString;
-				_dontTransmitCVar.ValueAsString = "0";
+				string desired = string.IsNullOrWhiteSpace(_config.TransmitCVarMode) ? "1" : _config.TransmitCVarMode.Trim();
+				_dontTransmitCVar.ValueAsString = desired;
 			}
 		}
 		catch (Exception ex)
@@ -213,6 +220,7 @@ internal sealed class AntiWallHackDetector : IDisposable
 		}
 
 		// Second pass: apply suppression masks to entities hidden from each viewer
+		int withheldCount = 0;
 		for (int i = 0; i < count; i++)
 		{
 			nint infoPtr = ((nint*)infos)[i];
@@ -235,10 +243,14 @@ internal sealed class AntiWallHackDetector : IDisposable
 				var entity = hiddenList[e];
 				if (entity.IsValid)
 				{
-					TransmitHook.WithholdEntity(primaryPtr, suppressedPtr, (int)entity.Index);
+					if (TransmitHook.WithholdEntity(primaryPtr, suppressedPtr, (int)entity.Index))
+					{
+						withheldCount++;
+					}
 				}
 			}
 		}
+		WithheldEntitiesThisTick = withheldCount;
 	}
 
 	private void OnHookFailure(Exception error)
@@ -254,7 +266,7 @@ internal sealed class AntiWallHackDetector : IDisposable
 	public string Stats()
 	{
 		string hookState = _hook?.IsHooked == true ? (_faulted ? "FAULTED" : (_config.ShadowMode ? "SHADOW" : "ACTIVE")) : "DISABLED";
-		return $"AntiWallHack: Enabled={_config.Enabled}, ShadowMode={_config.ShadowMode}, State={hookState}, HiddenPairs={HiddenPairs}, Traces={TracesThisTick}, Skips={BudgetSkipsThisTick}, Smokes={_smokeTracker.ActiveSmokeCount}, GraceTicks={_config.VisibleGraceTicks}, CornerPred={_config.CornerPrediction}, TargetPred={_config.TargetPrediction}, SmokeOcc={_config.SmokeOcclusion}, CombatRev={_config.CombatReveal}";
+		return $"AntiWallHack: Enabled={_config.Enabled}, ShadowMode={_config.ShadowMode}, State={hookState}, HiddenPairs={HiddenPairs}, Withheld={WithheldEntitiesThisTick}, DontTx={_dontTransmitCVar?.ValueAsString ?? "N/A"}, Traces={TracesThisTick}, Skips={BudgetSkipsThisTick}, Smokes={_smokeTracker.ActiveSmokeCount}, GraceTicks={_config.VisibleGraceTicks}, CornerPred={_config.CornerPrediction}, TargetPred={_config.TargetPrediction}, SmokeOcc={_config.SmokeOcclusion}, CombatRev={_config.CombatReveal}";
 	}
 
 	public void Dispose()

@@ -117,6 +117,7 @@
     "AntiWallHack": {
       "Enabled": true,
       "ShadowMode": false,
+      "TransmitCVarMode": "1",
       "CornerPrediction": true,
       "CornerPredictionSeconds": 0.12,
       "PingAdaptivePrediction": true,

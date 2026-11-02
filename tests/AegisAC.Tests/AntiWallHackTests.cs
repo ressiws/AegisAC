@@ -79,7 +79,7 @@ public class AntiWallHackTests
 
 		// Second call for already cleared bit should return false
 		bool secondCall = TransmitHook.WithholdEntity(primary, suppressed, entityIndex);
-		Assert.False(secondCall, "Second withhold call should return false when primary bit is already cleared");
+		Assert.True(secondCall, "Second withhold call should return true because suppression mask remains updated");
 	}
 
 	[Fact]
@@ -215,6 +215,7 @@ public class AntiWallHackTests
 		// At 27.0s (age 17.0s > 16.5s fade-out), smoke is dissipated
 		Assert.False(tracker.IsRayBlockedBySmoke(rayStart, rayEnd, 27.0f, 145.0f));
 	}
+
 
 	[Fact]
 	public void SmokeOcclusionTracker_OnRoundReset_ClearsActiveSmokes()
