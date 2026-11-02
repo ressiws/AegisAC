@@ -34,6 +34,11 @@ internal sealed class AntiWallHackDetector : IDisposable
 	public int HiddenPairs => _tracker.HiddenPairsCount;
 	public int TracesThisTick => _tracer.TracesThisTick;
 	public int BudgetSkipsThisTick => _tracer.BudgetSkipsThisTick;
+	public bool TeammatesAreEnemies
+	{
+		get => _tracker.TeammatesAreEnemies;
+		set => _tracker.TeammatesAreEnemies = value;
+	}
 
 	public AntiWallHackDetector(ISwiftlyCore core, AntiWallHackConfig config)
 	{
@@ -180,8 +185,7 @@ internal sealed class AntiWallHackDetector : IDisposable
 			return;
 		}
 
-		var rules = _core.EntitySystem.GetGameRules();
-		if (rules == null || rules.WarmupPeriod || rules.FreezePeriod || _roundEnded)
+		if (_roundEnded)
 		{
 			_tracker.Reset();
 			return;

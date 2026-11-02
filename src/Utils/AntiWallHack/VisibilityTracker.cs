@@ -103,7 +103,8 @@ internal sealed class VisibilityTracker
 	private readonly PlayerSnapshot?[] _players = new PlayerSnapshot?[64];
 	private readonly List<CEntityInstance>[] _hiddenBundles = Enumerable.Range(0, 64).Select(_ => new List<CEntityInstance>()).ToArray();
 	private readonly bool[] _evaluated = new bool[64];
-	private readonly (ulong Session, uint Pawn, byte Team)[] _identities = new (ulong, uint, byte)[64];
+	private readonly (uint Pawn, byte Team)[] _identities = new (uint, byte)[64];
+	public bool TeammatesAreEnemies { get; set; }
 	private readonly long[] _combatRevealUntilTick = new long[64];
 
 	private int _frameTick = -1;
@@ -207,7 +208,7 @@ internal sealed class VisibilityTracker
 				continue;
 			}
 
-			var currentIdentity = (player.SessionId, identity.EntityHandle.Raw, pawn.TeamNum);
+			var currentIdentity = (pawn.Index, pawn.TeamNum);
 			if (_identities[slot] != currentIdentity)
 			{
 				_identities[slot] = currentIdentity;
@@ -285,7 +286,7 @@ internal sealed class VisibilityTracker
 			int other = (offset + (tick & 63) + slot) & 63;
 			var target = _players[other];
 
-			if (target == null || other == slot || target.Team == viewer!.Team)
+			if (target == null || other == slot || (target.Team == viewer!.Team && !TeammatesAreEnemies))
 			{
 				continue;
 			}
@@ -328,7 +329,7 @@ internal sealed class VisibilityTracker
 		for (int other = 0; other < 64; other++)
 		{
 			var target = _players[other];
-			if (target == null || target.Team == viewer!.Team || !_pairs.IsHidden(slot, other, tick)
+			if (target == null || (target.Team == viewer!.Team && !TeammatesAreEnemies) || !_pairs.IsHidden(slot, other, tick)
 				|| !IsAlive(target.Player, target.Pawn))
 			{
 				continue;
@@ -411,14 +412,10 @@ internal sealed class VisibilityTracker
 	}
 
 	private static bool IsAlive(IPlayer player, CCSPlayerPawn? pawn) =>
-		player.IsValid && pawn is { IsValid: true } && pawn.Health > 0 && pawn.LifeState == 0 && !pawn.IsSpawning;
+		player.IsValid && pawn is { IsValid: true } && pawn.Health > 0 && pawn.LifeState == 0;
 
 	private static bool IsEligibleViewer(PlayerSnapshot? viewer) =>
-		viewer != null && IsAlive(viewer.Player, viewer.Pawn)
-		&& !viewer.Player.IsFakeClient
-		&& viewer.Player.ServerSideClient is { } client
-		&& !client.IsHLTV
-		&& client.DeltaTick >= 0;
+		viewer != null && IsAlive(viewer.Player, viewer.Pawn) && !viewer.Player.IsFakeClient;
 
 	private static bool IsFinite(Vector v) =>
 		float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);

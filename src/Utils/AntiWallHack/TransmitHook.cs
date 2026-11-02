@@ -101,7 +101,7 @@ internal sealed unsafe class TransmitHook : IDisposable
 		primary = 0;
 		suppressed = 0;
 
-		if (infoPtr == 0 || *((byte*)infoPtr + _fullUpdateOffset) != 0)
+		if (infoPtr == 0)
 		{
 			return false;
 		}
@@ -114,13 +114,12 @@ internal sealed unsafe class TransmitHook : IDisposable
 
 		primary = *(nint*)infoPtr;
 		suppressed = *(nint*)((byte*)infoPtr + 8);
-		return primary != 0 && suppressed != 0 && primary != suppressed;
+		return primary != 0;
 	}
 
 	public static bool WithholdEntity(uint* primaryMask, uint* dontTransmitMask, int entityIndex)
 	{
-		if (primaryMask == null || dontTransmitMask == null || primaryMask == dontTransmitMask
-			|| entityIndex <= 0 || entityIndex >= MaxEntityCount)
+		if (primaryMask == null || entityIndex <= 0 || entityIndex >= MaxEntityCount)
 		{
 			return false;
 		}
@@ -133,8 +132,13 @@ internal sealed unsafe class TransmitHook : IDisposable
 			return false;
 		}
 
-		// Register in dontTransmit suppression mask and remove from primary transmission mask
-		dontTransmitMask[wordIndex] |= bit;
+		// Register in suppression mask if available and distinct
+		if (dontTransmitMask != null && dontTransmitMask != primaryMask)
+		{
+			dontTransmitMask[wordIndex] |= bit;
+		}
+
+		// Clear transmission bit so the entity packet is withheld from the client
 		primaryMask[wordIndex] &= ~bit;
 		return true;
 	}

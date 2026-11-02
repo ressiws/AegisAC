@@ -240,7 +240,13 @@ public sealed class AegisAC : BasePlugin
 		try
 		{
 			if (Core.ConVar.Find<bool>("mp_teammates_are_enemies")?.Value is bool cvarVal)
+			{
 				_config.Aimbot.TeammatesAreEnemies = cvarVal;
+				if (_antiWallHack != null)
+				{
+					_antiWallHack.TeammatesAreEnemies = cvarVal;
+				}
+			}
 		}
 		catch { }
 	}
@@ -554,16 +560,10 @@ public sealed class AegisAC : BasePlugin
 		context.Reply($"[{Prefix} CVarScanner] tick={CurrentTick} {_cvarScanner.Stats()}");
 	}
 
-		[Command("awh_status", registerRaw: true, permission: "@css/root")]
+	[Command("awh_status", registerRaw: true, permission: "@css/root")]
 	[CommandAlias("antiwallhack_status", registerRaw: true)]
 	public void AntiWallHackStatusCommand(ICommandContext context)
 	{
-		if (!_config.Debug)
-		{
-			context.Reply($"[{Prefix}] Debug mode is disabled.");
-			return;
-		}
-
 		context.Reply($"[{Prefix} AntiWallHack] tick={CurrentTick} {_antiWallHack.Stats()}");
 	}
 
