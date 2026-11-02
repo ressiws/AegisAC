@@ -162,6 +162,13 @@ internal sealed class MovementDetector
         }
 
         string playerName = player.Controller?.PlayerName ?? $"Player#{slot}";
+
+        // Skip movement automation checks if player has high ping, packet loss, choke, or command bursts
+        if (_networkSafety != null && _networkSafety.ShouldSkipMovementOrSubtick(slot, 95.0f))
+        {
+            return;
+        }
+
         bool isAirborne = (pawn.Flags & 1u) == 0;
 
         bool jumpedThisTick = false;
@@ -204,7 +211,7 @@ internal sealed class MovementDetector
                 }
             }
 
-            if (_config.EnableAutoStrafeCheck && b.Accessor.HasField("viewangles"))
+            if (_config.EnableAutoStrafeCheck && b.Accessor.HasField("viewangles") && cmds.Count == 1)
             {
                 _players[slot].PushSample(cmdNum, b.Viewangles);
                 if (isAirborne)
@@ -213,7 +220,7 @@ internal sealed class MovementDetector
                 }
             }
 
-            if (_config.EnableNullsCheck && isAirborne && b.SubtickMoves != null && b.SubtickMoves.Count > 0)
+            if (_config.EnableNullsCheck && isAirborne && b.SubtickMoves != null && b.SubtickMoves.Count > 0 && cmds.Count == 1)
             {
                 int count = Math.Min(b.SubtickMoves.Count, 32);
                 for (int i = 0; i < count; i++)
@@ -225,7 +232,7 @@ internal sealed class MovementDetector
             }
         }
 
-        if (_config.EnableBhopCheck)
+        if (_config.EnableBhopCheck && cmds.Count <= 2)
         {
             RecordBhopStep(slot, player, playerName, isAirborne, jumpedThisTick);
         }

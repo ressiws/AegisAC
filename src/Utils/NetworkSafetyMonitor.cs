@@ -106,7 +106,9 @@ internal sealed class NetworkSafetyMonitor
 			|| incomingLoss >= MaximumLoss
 			|| outgoingLoss >= MaximumLoss
 			|| incomingChoke >= MaximumChoke
-			|| outgoingChoke >= MaximumChoke;
+			|| outgoingChoke >= MaximumChoke
+			|| commandBursts >= 2
+			|| unavailableSamples >= 3;
 	}
 
 	public void Reset()
@@ -143,6 +145,16 @@ internal sealed class NetworkSafetyMonitor
 				return samples[i].PingMilliseconds;
 		}
 		return 0f;
+	}
+
+	public bool IsHighPing(int playerId, float thresholdMs = 95.0f)
+	{
+		return GetCurrentPingMs(playerId) >= thresholdMs;
+	}
+
+	public bool ShouldSkipMovementOrSubtick(int playerId, float maxAllowedPingMs = 95.0f)
+	{
+		return ShouldSkipDetection(playerId, out _) || IsHighPing(playerId, maxAllowedPingMs);
 	}
 
 	private static void Prune(PlayerNetworkState data, DateTime now)

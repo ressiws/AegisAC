@@ -893,6 +893,27 @@ public class AimlockAndAntiAimTests
     }
 
     [Fact]
+    public void NetworkSafetyMonitor_HighPingOrCommandBursts_VetoesSubtickAndMovement()
+    {
+        var net = new NetworkSafetyMonitor();
+        DateTime now = DateTime.UtcNow;
+
+        // Player 1 has normal ping (35ms) and clean network
+        net.RecordSample(1, new NetworkSafetySample(now, 35.0f, 0f, 0f, 0f, 0f, true));
+        Assert.False(net.ShouldSkipMovementOrSubtick(1));
+
+        // Player 2 has high ping (110ms)
+        net.RecordSample(2, new NetworkSafetySample(now, 110.0f, 0f, 0f, 0f, 0f, true));
+        Assert.True(net.IsHighPing(2, 95.0f));
+        Assert.True(net.ShouldSkipMovementOrSubtick(2, 95.0f));
+
+        // Player 3 has packet command bursts (e.g. lag spike delivering batches of usercmds)
+        net.OnProcessUsercmds(3, count: 6, firstCmd: 10, lastCmd: 15, now);
+        net.OnProcessUsercmds(3, count: 6, firstCmd: 16, lastCmd: 21, now);
+        Assert.True(net.ShouldSkipMovementOrSubtick(3));
+    }
+
+    [Fact]
     public void IncidentDumper_CreatesStructuredJsonDumpOnDisk()
     {
         string tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "aegisac_test_incidents_" + Guid.NewGuid().ToString("N"));
