@@ -117,6 +117,13 @@ internal sealed class AntiWallHackDetector : IDisposable
 		_tracker.Reset();
 	}
 
+	public void OnMapLoad()
+	{
+		_roundEnded = false;
+		ConfigureTransmitCVar();
+		_tracker.Reset();
+	}
+
 	public void OnGameFrame(int tick)
 	{
 		// Main tick progression if needed outside CheckTransmit

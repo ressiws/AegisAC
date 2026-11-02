@@ -221,22 +221,28 @@ internal sealed class VisibilityTracker
 
 			var seen = new HashSet<nint>();
 			var scene = pawn.CBodyComponent?.SceneNode;
-			snapshot.Complete = scene != null && CollectChildren(scene.Child, snapshot.Entities, seen, 0);
+			if (scene != null)
+			{
+				CollectChildren(scene.Child, snapshot.Entities, seen, 0);
+			}
 
 			if (pawn.WeaponServices is { } weaponServices)
 			{
+				if (weaponServices.ActiveWeapon.Value is { IsValid: true } activeWep && !snapshot.Entities.Contains(activeWep))
+				{
+					snapshot.Entities.Add(activeWep);
+				}
+
 				foreach (var handle in weaponServices.MyWeapons)
 				{
-					if (handle.Value is { IsValid: true } weapon)
+					if (handle.Value is { IsValid: true } weapon && !snapshot.Entities.Contains(weapon))
 					{
 						snapshot.Entities.Add(weapon);
 					}
 				}
 			}
-			else
-			{
-				snapshot.Complete = false;
-			}
+
+			snapshot.Complete = true;
 
 			_players[slot] = snapshot;
 		}
@@ -299,14 +305,26 @@ internal sealed class VisibilityTracker
 		{
 			var target = _players[other];
 			if (target == null || target.Team == viewer!.Team || !_pairs.IsHidden(slot, other, tick)
-				|| !IsAlive(target.Player, target.Pawn)
-				|| target.Entities.Any(e => !e.IsValid || e.Index == 0 || e.Index >= TransmitHook.MaxEntityCount))
+				|| !IsAlive(target.Player, target.Pawn))
 			{
 				continue;
 			}
 
-			result.AddRange(target.Entities);
-			HiddenPairsCount++;
+			bool addedAny = false;
+			for (int e = 0; e < target.Entities.Count; e++)
+			{
+				var entity = target.Entities[e];
+				if (entity.IsValid && entity.Index > 0 && entity.Index < TransmitHook.MaxEntityCount)
+				{
+					result.Add(entity);
+					addedAny = true;
+				}
+			}
+
+			if (addedAny)
+			{
+				HiddenPairsCount++;
+			}
 		}
 
 		return result;
@@ -332,54 +350,51 @@ internal sealed class VisibilityTracker
 
 			if (owners.TryGetValue(entity.OwnerEntity.EntityIndex, out var owner) && entity != owner.Pawn)
 			{
-				owner.Entities.Add(entity);
+				if (!owner.Entities.Contains(entity))
+				{
+					owner.Entities.Add(entity);
+				}
 			}
 		}
 	}
 
-	private static bool CollectChildren(CGameSceneNode? node, List<CEntityInstance> entities, HashSet<nint> seen, int depth)
+	private static void CollectChildren(CGameSceneNode? node, List<CEntityInstance> entities, HashSet<nint> seen, int depth)
 	{
 		while (node != null)
 		{
 			if (depth > 16 || seen.Count >= 128 || !seen.Add(node.Address))
 			{
-				return false;
+				return;
 			}
 
-			if (node.Owner is not { IsValid: true } entity)
+			if (node.Owner is { IsValid: true } entity
+				&& entity is not CCSPlayerPawn
+				&& entity is not CCSPlayerController)
 			{
-				return false;
+				if (!entities.Contains(entity))
+				{
+					entities.Add(entity);
+				}
 			}
 
-			if (entity is CCSPlayerPawn or CCSPlayerController)
+			if (node.Child != null)
 			{
-				return false;
-			}
-
-			entities.Add(entity);
-
-			if (!CollectChildren(node.Child, entities, seen, depth + 1))
-			{
-				return false;
+				CollectChildren(node.Child, entities, seen, depth + 1);
 			}
 
 			node = node.NextSibling;
 		}
-
-		return true;
 	}
 
 	private static bool IsAlive(IPlayer player, CCSPlayerPawn? pawn) =>
-		player.IsValid && pawn is { IsValid: true } && pawn.Health > 0 && pawn.LifeState == 0 && !pawn.IsSpawning
-		&& player.Controller is { IsValid: true } controller
-		&& pawn.Controller.Value?.Address == controller.Address
-		&& controller.PlayerPawn.Value?.Address == pawn.Address;
+		player.IsValid && pawn is { IsValid: true } && pawn.Health > 0 && pawn.LifeState == 0 && !pawn.IsSpawning;
 
 	private static bool IsEligibleViewer(PlayerSnapshot? viewer) =>
 		viewer != null && IsAlive(viewer.Player, viewer.Pawn)
 		&& !viewer.Player.IsFakeClient
-		&& !viewer.Player.ServerSideClient.IsHLTV
-		&& viewer.Player.ServerSideClient.DeltaTick >= 0;
+		&& viewer.Player.ServerSideClient is { } client
+		&& !client.IsHLTV
+		&& client.DeltaTick >= 0;
 
 	private static bool IsFinite(Vector v) =>
 		float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);

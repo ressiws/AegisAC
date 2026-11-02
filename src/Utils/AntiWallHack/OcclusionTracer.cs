@@ -149,8 +149,14 @@ internal sealed class OcclusionTracer
 			TracesThisTick++;
 			var hit = _core.Trace.TraceShapeLine(rayStart, rayEnd, _traceParams);
 
-			// If clear ray reached target without starting in solid geometry
-			if (!hit.StartInSolid && float.IsFinite(hit.Fraction) && hit.Fraction >= 0.99f && hit.Fraction <= 1.0f)
+			// Ray started in solid geometry; indeterminate state
+			if (hit.StartInSolid)
+			{
+				return OcclusionResult.Unknown;
+			}
+
+			// If clear ray reached target without obstruction (fraction close to 1.0)
+			if (float.IsFinite(hit.Fraction) && hit.Fraction >= 0.99f && hit.Fraction <= 1.0f)
 			{
 				_preferredSample[viewerSlot, targetSlot] = sampleIndex;
 				return OcclusionResult.Visible;

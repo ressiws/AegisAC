@@ -36,16 +36,30 @@ internal sealed unsafe class TransmitHook : IDisposable
 	{
 		try
 		{
-			int slotOff = core.GameData.GetOffset("CTransmitInfo::PlayerSlot");
-			if (slotOff > 0)
+			try
 			{
-				_playerSlotOffset = slotOff;
+				int slotOff = core.GameData.GetOffset("CTransmitInfo::PlayerSlot");
+				if (slotOff > 0)
+				{
+					_playerSlotOffset = slotOff;
+				}
+			}
+			catch
+			{
+				// Keep default 0x240 (576) from verified CS2 binary layout
 			}
 
-			int fullOff = core.GameData.GetOffset("CTransmitInfo::FullUpdate");
-			if (fullOff > 0)
+			try
 			{
-				_fullUpdateOffset = fullOff;
+				int fullOff = core.GameData.GetOffset("CTransmitInfo::FullUpdate");
+				if (fullOff > 0)
+				{
+					_fullUpdateOffset = fullOff;
+				}
+			}
+			catch
+			{
+				// Keep default 0x244 (580) from verified CS2 binary layout
 			}
 
 			nint table = core.Memory.GetVTableAddress("server", "CSource2GameEntities") ?? 0;

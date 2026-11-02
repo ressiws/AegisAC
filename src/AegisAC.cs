@@ -346,7 +346,7 @@ public sealed class AegisAC : BasePlugin
 		_exploits.ResetAll();
 		_dllInjection.ResetAll();
 		_cvarScanner.ResetAll();
-		_antiWallHack.ResetAll();
+		_antiWallHack.OnMapLoad();
 	}
 
 	[GameEventHandler(HookMode.Post)]
