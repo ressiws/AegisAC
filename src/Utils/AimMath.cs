@@ -356,17 +356,18 @@ internal static class AimMath
 	}
 
 	/// <summary>
-	/// Calculates the optimal theoretical air-strafe yaw delta using Source 2 AirAccelerate kinematics (Source 2 aerodynamic model).
+	/// Calculates the optimal theoretical air-strafe yaw turning rate per tick using Source 2 AirAccelerate kinematics (Source 2 aerodynamic model).
+	/// Returns atan2(accelSpeed, speed2D) in degrees, representing the optimal angular turn step per tick to maximize acceleration gain.
 	/// </summary>
 	public static float CalculateIdealStrafeYaw(float speed2D, float wishspeed = 30.0f, float accel = 12.0f, float duration = 1.0f / 64.0f)
 	{
+		if (speed2D <= 0.0f)
+			return 0.0f;
+
 		double accelSpeed = accel * wishspeed * duration;
-		if (accelSpeed <= 0.0 || speed2D <= 0.0f)
-			return 90.0f;
-		double wishspeedCapped = Math.Min(wishspeed, 30.0f);
-		double value = wishspeedCapped - accelSpeed;
-		if (value <= 0.0)
-			return 90.0f;
-		return (float)(Math.Acos(value / wishspeedCapped) * Rad2Deg);
+		if (accelSpeed <= 0.0)
+			return 0.0f;
+
+		return (float)(Math.Atan2(accelSpeed, speed2D) * Rad2Deg);
 	}
 }

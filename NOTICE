@@ -1,9 +1,12 @@
 Aegis Anti-Cheat (AegisAC)
-Copyright 2026 swisser & sevon
+Copyright (C) 2026 swisser & sevon
 
-This product includes software developed by swisser & sevon.
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License (AGPL-3.0)
+as published by the Free Software Foundation.
 
-Attribution Requirement:
-Any redistribution, fork, modification, or inclusion of this software
-or substantial portions thereof must retain this notice and prominently credit
-the original authors (swisser & sevon) in documentation and user-facing credits.
+This product incorporates detection algorithms and architectural concepts
+ported and derived from:
+- CS2AC Legacy (Copyright (C) karola3vax, AGPL-3.0)
+- CS2KZ (AGPL-3.0)
+- TugaAC / TugaArmy comparative research & mouse sensor step metrics.

@@ -43,7 +43,7 @@ public sealed class AegisAC : BasePlugin
 	private CVarScannerDetector _cvarScanner = null!;
 	private AntiWallHackDetector _antiWallHack = null!;
 	private ConvictionEngine _conviction = null!;
-	private readonly Dictionary<int, DateTime> _lastStaffAlertTimes = new();
+	private readonly Dictionary<(int Slot, string Module), DateTime> _lastStaffAlertTimes = new();
 	private IDisposable? _configChangeToken;
 	private Guid _fireBulletsHookGuid;
 	private bool _hasFireBulletsHook;
@@ -365,7 +365,15 @@ public sealed class AegisAC : BasePlugin
 		_cvarScanner.ResetPlayer(e.PlayerId);
 		_antiWallHack.ResetPlayer(e.PlayerId);
 		_conviction?.ResetPlayer(e.PlayerId);
-		_lastStaffAlertTimes.Remove(e.PlayerId);
+		if (Core.PlayerManager.GetPlayer(e.PlayerId) is { } p && p.SteamID > 0)
+		{
+			_conviction?.ResetPlayer(p.SteamID);
+		}
+		var keysToRemove = _lastStaffAlertTimes.Keys.Where(k => k.Slot == e.PlayerId).ToList();
+		foreach (var k in keysToRemove)
+		{
+			_lastStaffAlertTimes.Remove(k);
+		}
 	}
 
 	private void OnMapLoad(SwiftlyS2.Shared.Events.IOnMapLoadEvent e)
@@ -381,6 +389,7 @@ public sealed class AegisAC : BasePlugin
 		_dllInjection.ResetAll();
 		_cvarScanner.ResetAll();
 		_antiWallHack.OnMapLoad();
+		_conviction?.ResetAll();
 		_lastStaffAlertTimes.Clear();
 	}
 
@@ -628,23 +637,30 @@ public sealed class AegisAC : BasePlugin
 
 		DateTime now = DateTime.UtcNow;
 		int slot = suspect.PlayerID;
+		var alertKey = (slot, moduleName);
 
 		if (!isConviction)
 		{
-			if (_lastStaffAlertTimes.TryGetValue(slot, out var lastTime))
+			if (_lastStaffAlertTimes.TryGetValue(alertKey, out var lastTime))
 			{
 				if ((now - lastTime).TotalSeconds < Math.Max(1.0f, _config.StaffAlerts.CooldownSeconds))
 					return;
 			}
-			_lastStaffAlertTimes[slot] = now;
+			_lastStaffAlertTimes[alertKey] = now;
 		}
 
 		string suspectName = suspect.Controller?.PlayerName ?? $"#{slot}";
 		string flag = !string.IsNullOrWhiteSpace(_config.StaffAlerts.PermissionFlag) ? _config.StaffAlerts.PermissionFlag : "@css/generic";
 
+		string cleanEvidence = evidence.Replace("\r\n", " ").Replace("\n", " ").Trim();
+		if (cleanEvidence.Length > 160)
+		{
+			cleanEvidence = cleanEvidence[..157] + "...";
+		}
+
 		string message = isConviction
-			? $" \x04[{Prefix}]\x01 \x02[CONVICTION ALERT]\x01 Suspect \x07{suspectName}\x01 reached conviction threshold! (\x0F{detection}\x01 - {evidence})"
-			: $" \x04[{Prefix}]\x01 \x09[STAFF ALERT]\x01 Suspect \x07{suspectName}\x01 flagged for \x0F{detection}\x01 (\x06{moduleName}\x01 - {evidence})";
+			? $" \x04[{Prefix}]\x01 \x02[CONVICTION ALERT]\x01 Suspect \x07{suspectName}\x01 reached conviction threshold! (\x0F{detection}\x01 - {cleanEvidence})"
+			: $" \x04[{Prefix}]\x01 \x09[STAFF ALERT]\x01 Suspect \x07{suspectName}\x01 flagged for \x0F{detection}\x01 (\x06{moduleName}\x01 - {cleanEvidence})";
 
 		foreach (var admin in Core.PlayerManager.GetAllValidPlayers())
 		{
@@ -656,7 +672,10 @@ public sealed class AegisAC : BasePlugin
 			{
 				hasPerm = Core.Permission.PlayerHasPermission(admin.SteamID, flag);
 			}
-			catch { }
+			catch (Exception ex)
+			{
+				Utils.ConsoleLog($"[StaffAlerts] Permission check error for admin {admin.PlayerID}: {ex.Message}");
+			}
 
 			if (hasPerm)
 			{
@@ -664,7 +683,10 @@ public sealed class AegisAC : BasePlugin
 				{
 					admin.SendChat(message);
 				}
-				catch { }
+				catch (Exception ex)
+				{
+					Utils.ConsoleLog($"[StaffAlerts] SendChat failed for admin {admin.PlayerID}: {ex.Message}");
+				}
 			}
 		}
 	}
@@ -688,6 +710,39 @@ public sealed class AegisAC : BasePlugin
 			Utils.ConsoleLog($"[CumulativeConviction] {name} ({player.SteamID}) {convDetails}");
 			NotifyStaffInGame(player, "CumulativeConviction", "Convicted", convictionSummary, isConviction: true);
 			_punishmentManager.Punish(player, _config.Conviction.Punishment, "CumulativeConviction", convictionSummary);
+
+			if (_config.Telemetry.DumpIncidents)
+			{
+				IncidentDumper.DumpIncident(
+					_config.Telemetry.IncidentsDirectory,
+					_config.ServerId,
+					CurrentMapName,
+					CurrentTick,
+					name,
+					player.SteamID,
+					player.UserID,
+					player.PlayerID,
+					"CumulativeConviction",
+					"Convicted",
+					_config.Conviction.Punishment.ToString(),
+					convictionSummary);
+			}
+
+			if (_config.Discord.Enabled && !string.IsNullOrWhiteSpace(_config.Discord.WebhookUrl))
+			{
+				DiscordWebhookNotifier.SendAlert(
+					_config.Discord.WebhookUrl,
+					_config.ServerId,
+					CurrentMapName,
+					CurrentTick,
+					name,
+					player.SteamID,
+					"CumulativeConviction",
+					"Convicted",
+					_config.Conviction.Punishment,
+					convictionSummary,
+					Prefix);
+			}
 		}
 
 		if (_config.Telemetry.DumpIncidents)

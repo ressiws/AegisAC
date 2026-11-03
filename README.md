@@ -11,7 +11,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Counter--Strike%202-blue.svg?style=for-the-badge&logo=counter-strike)](https://store.steampowered.com/app/730/CounterStrike_2/)
 [![Framework](https://img.shields.io/badge/Framework-SwiftlyS2-orange.svg?style=for-the-badge)](https://swiftlys2.net)
 [![Runtime](https://img.shields.io/badge/.NET-10.0-purple.svg?style=for-the-badge&logo=dotnet)](https://dotnet.microsoft.com/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](LICENSE)
+[![License](https://img.shields.io/badge/License-AGPL--3.0-blue.svg?style=for-the-badge)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/aaWRywQaSq)
 [![Trusted by TugaArmy](https://img.shields.io/badge/Trusted%20by-TugaArmy-2ea44f.svg?style=for-the-badge&logo=shield)](https://tugaarmy.pt)
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-swisser-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/swisser)
@@ -73,11 +73,11 @@ For comprehensive operational guides, configuration reference tables, and troubl
 - **Evidence-Based Sanctions:** Punishments are only executed when multiple, high-confidence evidence points are collected across a sliding time window, mitigating false positives.
 - **Extensible Architecture:** Modular design allowing server owners to select independent punishment types (`ban`, `kick`, or `none`) and granular settings for each of the **10 dedicated detection modules**.
 
-### 🤝 Trusted by TugaArmy
+### 🤝 Community Testing & Collaboration
 
-> **In partnership with [TugaArmy](https://tugaarmy.pt) · CS2 Community & Server Network**
+> **Tested in collaboration with the [TugaArmy](https://tugaarmy.pt) CS2 Community**
 >
-> AegisAC was developed in collaboration with **TugaArmy** and is currently deployed and battle-tested across its Counter-Strike 2 server network.
+> AegisAC is tested and calibrated in collaboration with members of the **TugaArmy** Counter-Strike 2 community in shadow telemetry mode alongside comparative anticheat tooling.
 >
 > 🌐 [Visit TugaArmy](https://tugaarmy.pt)
 
@@ -785,10 +785,14 @@ If you appreciate AegisAC and want to support ongoing research, updates, and mai
 
 ## 📄 License & Attribution
 
-This project is licensed under the **[Apache License 2.0](LICENSE)**.
+This project is licensed under the **[GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE)**.
 
-### Attribution Requirement
-Under Section 4 of the Apache 2.0 license and the accompanying [`NOTICE`](NOTICE) file, any redistribution, modification, fork, or inclusion of this project must:
-1. Retain all original copyright, patent, trademark, and attribution notices.
-2. Prominently display attribution and credit to the original authors (**swisser & sevon**).
-3. State any modifications made to the source files.
+### Authors & Maintainers
+- **swisser**: [https://github.com/ressiws](https://github.com/ressiws)
+- **sevon**: [https://github.com/victor201202](https://github.com/victor201202)
+
+### Upstream Acknowledgments & Credits
+AegisAC is derived from and builds upon foundational work by the open-source Counter-Strike 2 development community:
+- **[CS2AC Legacy](https://github.com/karola3vax/CS2AC)** by **karola3vax** (AGPL-3.0): Core Aimbot, Aimlock, and Triggerbot state machine architectures.
+- **[CS2KZ](https://github.com/Source2ZE/CS2KZ)** (AGPL-3.0): Source 2 AirAccelerate kinematics and aerodynamic air-strafe reference models.
+- **TugaAC / TugaArmy Community**: Collaborative detection heuristics, optical mouse sensor quantization research, and real-world shadow validation.

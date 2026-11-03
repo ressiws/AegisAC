@@ -75,8 +75,8 @@ internal static class CornerPredictor
 			return baseShoulder;
 		}
 
-		// Scales smoothly: +0.4 units per 25ms of latency up to max 24 units extra
+		// Scales smoothly: +2.4 units per 25ms of latency up to max 24 units extra (total up to 48 units)
 		float pingBuckets = MathF.Floor(Math.Min(pingMs, 250f) / 25.0f);
-		return Math.Min(baseShoulder + 0.4f * pingBuckets, baseShoulder + 24.0f);
+		return Math.Min(baseShoulder + 2.4f * pingBuckets, baseShoulder + 24.0f);
 	}
 }

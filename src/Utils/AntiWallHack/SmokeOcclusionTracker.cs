@@ -160,6 +160,13 @@ internal sealed class SmokeOcclusionTracker
 						continue;
 					}
 
+					// The HE grenade must have detonated inside or directly adjacent to this smoke cloud
+					float maxBlastDist = smokeRadius + 110f;
+					if (Vector3.DistanceSquared(clearance.Center, smoke.Center) > maxBlastDist * maxBlastDist)
+					{
+						continue;
+					}
+
 					Vector3 toClearance = clearance.Center - start;
 					float tClear = Math.Clamp(Vector3.Dot(toClearance, rayVec) / rayLengthSq, 0f, 1f);
 					Vector3 closestClear = start + tClear * rayVec;

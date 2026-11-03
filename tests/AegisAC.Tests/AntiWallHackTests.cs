@@ -232,8 +232,8 @@ public class AntiWallHackTests
 	public void CornerPredictor_CalculatePingShoulder_ScalesWithLatency()
 	{
 		Assert.Equal(24.0f, CornerPredictor.CalculatePingShoulder(0f, 24.0f));
-		Assert.Equal(24.8f, CornerPredictor.CalculatePingShoulder(50f, 24.0f));
-		Assert.Equal(25.6f, CornerPredictor.CalculatePingShoulder(100f, 24.0f));
+		Assert.Equal(28.8f, CornerPredictor.CalculatePingShoulder(50f, 24.0f));
+		Assert.Equal(33.6f, CornerPredictor.CalculatePingShoulder(100f, 24.0f));
 		Assert.True(CornerPredictor.CalculatePingShoulder(500f, 24.0f) <= 48.0f);
 	}
 
@@ -251,5 +251,23 @@ public class AntiWallHackTests
 		// Ray passing through y=570 (through the HE clearance hole)
 		bool holeRayBlocked = tracker.IsRayBlockedBySmoke(new Vector3(0f, 570f, 15f), new Vector3(1000f, 570f, 15f), 13.0f, 145.0f);
 		Assert.False(holeRayBlocked, "Ray passing through localized HE clearance hole should not be occluded");
+	}
+
+	[Fact]
+	public void SmokeOcclusionTracker_HeGrenade_FarAwayDoesNotClearSmoke()
+	{
+		var tracker = new SmokeOcclusionTracker();
+		var smokeCenter = new Vector3(500f, 500f, 0f);
+		tracker.OnSmokeDetonate(smokeCenter, 10.0f);
+
+		var rayStart = new Vector3(0f, 500f, 15f);
+		var rayEnd = new Vector3(1000f, 500f, 15f);
+
+		// HE grenade detonates near rayStart (450 units away from smokeCenter)
+		tracker.OnHeDetonate(new Vector3(50f, 500f, 15f), 14.0f);
+
+		// Smoke must remain occluded!
+		bool blocked = tracker.IsRayBlockedBySmoke(rayStart, rayEnd, 15.0f, 145.0f);
+		Assert.True(blocked, "HE grenade far away from the smoke must not clear the smoke");
 	}
 }

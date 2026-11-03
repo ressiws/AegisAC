@@ -217,8 +217,11 @@ public sealed class ExploitsConfig
 	[Description("Enable NameChanger spam detection (>= 5 visible name changes within 60 seconds).")]
 	public bool EnableNameChangerCheck { get; set; } = true;
 
-	[Description("Enable Mouseless Aim detection (viewangle rotation >= 1.0 deg with mousedx=0 and mousedy=0 before firing).")]
+	[Description("Enable Mouseless Aim detection (viewangle rotation without physical mouse delta before firing).")]
 	public bool EnableMouselessAimCheck { get; set; } = true;
+
+	[Description("Minimum pre-shot rotation in degrees without mouse movement required to count towards Mouseless Aim detection (default: 4.5 deg to eliminate recoil/punch false positives).")]
+	public float MouselessAimMinDegrees { get; set; } = 4.5f;
 
 	[Description("Enable Mouse Grid detection (unexplained viewangle rotation deviating from hardware sensor step before firing).")]
 	public bool EnableMouseGridCheck { get; set; } = true;
@@ -284,9 +287,9 @@ public sealed class ConvictionConfig
 	[Description("Enable or disable the Cumulative Conviction Engine.")]
 	public bool Enabled { get; set; } = true;
 
-	[Description("Punishment applied when cumulative conviction threshold is exceeded: 'none', 'kick', or 'ban'.")]
+	[Description("Punishment applied when cumulative conviction threshold is exceeded: 'none', 'kick', or 'ban'. Keep 'none' during calibration.")]
 	[JsonConverter(typeof(JsonStringEnumConverter))]
-	public PunishmentType Punishment { get; set; } = PunishmentType.Ban;
+	public PunishmentType Punishment { get; set; } = PunishmentType.None;
 
 	[Description("Cumulative conviction score threshold to trigger action (default: 10.0 points).")]
 	public float ConvictionThreshold { get; set; } = 10.0f;

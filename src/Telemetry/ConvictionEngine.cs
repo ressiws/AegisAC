@@ -82,31 +82,44 @@ public sealed class ConvictionEngine
 		}
 	}
 
+	public void ResetPlayer(ulong steamId)
+	{
+		if (steamId > 0)
+		{
+			_suspectsBySteam.Remove(steamId);
+		}
+	}
+
 	/// <summary>
 	/// Returns the calibrated confidence weight of a detection type.
+	/// Normalizes spaces, underscores, and hyphens so all production module names match their exact weights.
 	/// </summary>
-	public static float GetDetectionWeight(string module, string detection) => detection.ToUpperInvariant() switch
+	public static float GetDetectionWeight(string module, string detection)
 	{
-		"ANTIAIM" or "SPINBOT" => 5.0f,
-		"AIMBOT" or "CONVERGENCE" or "SNAPHIT" => 4.5f,
-		"SILENTAIM" or "SUBTICKSILENTAIM" => 4.0f,
-		"FORGEDCOMMAND" or "WHENREPEAT" => 3.5f,
-		"MOUSELESSAIM" => 3.5f,
-		"MOUSEGRID" or "MOUSE_GRID" => 3.0f,
-		"TRIGGERBOT" or "SYNTHETICINPUT" => 3.0f,
-		"AIMLOCK" or "WALLTRACKING" => 3.0f,
-		"INHUMAN_ACCURACY" => 3.0f,
-		"IRREGULAR_BEHAVIOR" => 2.5f,
-		"BHOP" or "HYPERSCROLL" => 2.5f,
-		"AUTOSTRAFE" or "STRAFEOPTIMIZER" => 2.5f,
-		"NULLS" or "SNAPTAP" => 2.0f,
-		"DOUBLETAP" => 2.0f,
-		"NAMECHANGER" => 1.5f,
-		"DESUBTICK" or "SUBTICKTAMPER" => 1.5f,
-		"DLL_INJECTION" or "DLLINJECTION" => 4.0f,
-		"CVAR" or "CVARSCANNER" => 3.5f,
-		_ => 2.0f
-	};
+		string norm = detection.ToUpperInvariant().Replace(" ", "").Replace("_", "").Replace("-", "");
+		return norm switch
+		{
+			"ANTIAIM" or "SPINBOT" or "UNTRUSTED" or "ANTIUNTRUSTED" => 5.0f,
+			"AIMBOT" or "CONVERGENCE" or "SNAPHIT" => 4.5f,
+			"SILENTAIM" or "SUBTICKSILENTAIM" or "SNAPRETURN" => 4.0f,
+			"FORGEDCOMMAND" or "WHENREPEAT" or "ZEROTICK" => 3.5f,
+			"MOUSELESSAIM" => 3.5f,
+			"MOUSEGRID" => 3.0f,
+			"TRIGGERBOT" or "SYNTHETICINPUT" => 3.0f,
+			"AIMLOCK" or "WALLTRACKING" => 3.0f,
+			"INHUMANACCURACY" => 3.0f,
+			"IRREGULARBEHAVIOR" => 2.5f,
+			"BHOP" or "HYPERSCROLL" => 2.5f,
+			"AUTOSTRAFE" or "STRAFEOPTIMIZER" => 2.5f,
+			"NULLS" or "SNAPTAP" => 2.0f,
+			"DOUBLETAP" => 2.0f,
+			"NAMECHANGER" => 1.5f,
+			"DESUBTICK" or "SUBTICKTAMPER" or "INVALIDINPUT" => 1.5f,
+			"DLLINJECTION" => 4.0f,
+			"CVAR" or "CVARSCANNER" or "FORBIDDENCVAR" => 3.5f,
+			_ => 2.0f
+		};
+	}
 
 	/// <summary>
 	/// Registers evidence and evaluates cross-module cumulative conviction.
@@ -179,15 +192,20 @@ public sealed class ConvictionEngine
 			}
 		}
 
+		// Check for duplicate reports of the same physical anomaly across modules within 0.25s
+		bool isDuplicateCrossModuleReport = suspect.RecentIncidents.Any(i =>
+			(now - i.Timestamp).TotalSeconds <= 0.25 &&
+			(string.Equals(i.Detection, detection, StringComparison.OrdinalIgnoreCase) ||
+			 (detection.Contains("UNTRUSTED", StringComparison.OrdinalIgnoreCase) && i.Detection.Contains("UNTRUSTED", StringComparison.OrdinalIgnoreCase))));
+
 		suspect.DetectionCounts[detection] = (now, repeatCount + 1);
-		suspect.ModuleCounts[module] = suspect.ModuleCounts.GetValueOrDefault(module, 0) + 1;
 
 		float addedScore = baseWeight * (float)Math.Pow(0.5, repeatCount);
 		suspect.DecayedScore += addedScore;
 
 		suspect.RecentIncidents.Add(new SuspectIncident
 		{
-			Module = module,
+			Module = isDuplicateCrossModuleReport ? suspect.RecentIncidents.Last().Module : module,
 			Detection = detection,
 			Details = details,
 			Timestamp = now,
@@ -198,8 +216,15 @@ public sealed class ConvictionEngine
 		TimeSpan maxHistory = TimeSpan.FromMinutes(_config.HalfLifeMinutes * 2.0);
 		suspect.RecentIncidents.RemoveAll(i => now - i.Timestamp > maxHistory);
 
+		// Dynamically synchronize active module counts with non-expired incidents
+		suspect.ModuleCounts.Clear();
+		foreach (var inc in suspect.RecentIncidents)
+		{
+			suspect.ModuleCounts[inc.Module] = suspect.ModuleCounts.GetValueOrDefault(inc.Module, 0) + 1;
+		}
+
 		// 3. Cross-Module Entropy & Synergy Multiplier
-		// When anomalies span orthogonal systems (e.g. Combat + Movement + Exploits), synergy increases confidence
+		// Calculated strictly from unexpired incidents across distinct systems
 		int distinctModules = suspect.ModuleCounts.Count(m => m.Value > 0);
 		float synergyMultiplier = 1.0f;
 		if (distinctModules >= _config.MinimumDistinctModules)
@@ -226,7 +251,7 @@ public sealed class ConvictionEngine
 	}
 
 	/// <summary>
-	/// Returns a list of active suspects sorted by decayed conviction score descending.
+	/// Returns a list of active suspects sorted by real-time decayed conviction score descending.
 	/// </summary>
 	public List<SuspectRecord> GetActiveSuspects(DateTime? nowOverride = null)
 	{
@@ -239,9 +264,19 @@ public sealed class ConvictionEngine
 			if (s.LastIncidentTime != DateTime.MinValue)
 			{
 				double elapsedMs = (now - s.LastIncidentTime).TotalMilliseconds;
-				double decay = Math.Pow(0.5, elapsedMs / halfLifeMs);
-				float currentScore = (float)(s.DecayedScore * decay);
-				if (currentScore >= 0.5f)
+				double decay = Math.Pow(0.5, Math.Max(0.0, elapsedMs) / halfLifeMs);
+				s.DecayedScore = (float)(s.DecayedScore * decay);
+				s.LastIncidentTime = now;
+
+				TimeSpan maxHistory = TimeSpan.FromMinutes(_config.HalfLifeMinutes * 2.0);
+				s.RecentIncidents.RemoveAll(i => now - i.Timestamp > maxHistory);
+				s.ModuleCounts.Clear();
+				foreach (var inc in s.RecentIncidents)
+				{
+					s.ModuleCounts[inc.Module] = s.ModuleCounts.GetValueOrDefault(inc.Module, 0) + 1;
+				}
+
+				if (s.DecayedScore >= 0.5f || s.HasBeenConvicted)
 				{
 					list.Add(s);
 				}
