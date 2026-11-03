@@ -232,7 +232,7 @@ internal static class AimMath
 	}
 
 	/// <summary>
-	/// Reverse-engineered mathematical baselines from Riot Vanguard &amp; Blizzard Overwatch
+	/// Empirical mathematical baselines and statistical heuristics
 	/// adapted for 64-tick server-side CS2 evaluation.
 	/// </summary>
 	public static class Baselines

@@ -157,7 +157,7 @@ AegisAC enforces a clean architectural separation between detection logic and ut
   - `DllInjection.cs`
   - `CVarScanner.cs`
 - **`src/Utils/`:** Houses all reusable geometric math, network monitors, unmanaged engine hooks, and visibility tracers:
-  - `AimMath.cs` — Trigonometry, geodesic angular distances, and Vanguard/Overwatch baselines.
+  - `AimMath.cs` — Trigonometry, geodesic angular distances, kinematics, and empirical baselines.
   - `NetworkSafetyMonitor.cs` — Sliding-window latency, jitter, loss, and choke tracking to prevent false flags during network lag.
   - `Utils.cs` — Logging, console styling, chat printing, and debug helpers.
   - `AntiWallHack/CornerPredictor.cs` — Predictive corner-peeking velocity and directional input lead calculator.
@@ -409,9 +409,9 @@ Verifies critical client-side console variables to prevent client-side visual an
 
 ---
 
-## 🔬 Commercial Anti-Cheat Reverse-Engineering, Engine Invariants & Empirical Hypotheses
+## 🔬 Empirical Anti-Cheat Baselines & Engine Invariants
 
-AegisAC formalizes all **8 reverse-engineered Riot Vanguard & Blizzard Overwatch metrics** in [`AimMath.Baselines`](src/Utils/AimMath.cs) alongside verified CS2 engine invariants:
+AegisAC formalizes empirical statistical metrics in [`AimMath.Baselines`](src/Utils/AimMath.cs) alongside verified CS2 engine invariants:
 
 | Metric / Gate | Threshold (`AimMath.Baselines`) | AegisAC Implementation & Calibration | Detection Target |
 | :--- | :--- | :--- | :--- |
@@ -692,7 +692,7 @@ AegisAC features native **Discord Components V2** webhook alerts with structured
 │ └──────────────────────────────────────────────────────┘
 ```
 
-- **Non-blocking:** Embeds are dispatched in an asynchronous background worker pool, guaranteeing zero frame drops or lag spikes on the game thread.
+- **Non-blocking:** Embeds are dispatched in an asynchronous background worker pool, preventing frame drops or hitching on the server game thread.
 - **Color-Coded:** Red for Bans, Orange for Kicks, Gold/Yellow for Logged alerts.
 - **Steam Profile Links:** Direct clickable links to the flagged player's Steam Community profile.
 

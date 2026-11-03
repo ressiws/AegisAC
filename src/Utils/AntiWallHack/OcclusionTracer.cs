@@ -79,7 +79,8 @@ internal sealed class OcclusionTracer
 
 		if (!_samplesReady[targetSlot])
 		{
-			BuildTargetSamples(targetSlot, target);
+			float viewerPing = viewer.Player?.Controller?.Ping ?? 0f;
+			BuildTargetSamples(targetSlot, target, viewerPing);
 		}
 
 		var points = _samplePoints[targetSlot];
@@ -230,7 +231,7 @@ internal sealed class OcclusionTracer
 		return OcclusionResult.Hidden;
 	}
 
-	private void BuildTargetSamples(int slot, PlayerSnapshot target)
+	private void BuildTargetSamples(int slot, PlayerSnapshot target, float observerPing = 0f)
 	{
 		var pts = _samplePoints[slot];
 		float pad = DefaultPadding;

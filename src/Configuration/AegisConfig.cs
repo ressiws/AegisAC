@@ -362,10 +362,10 @@ public sealed class TelemetryConfig
 public sealed class AntiWallHackConfig
 {
 	[Description("Enable or disable server-side Anti-WallHack entity transmission occlusion.")]
-	public bool Enabled { get; set; } = true;
+	public bool Enabled { get; set; } = false;
 
-	[Description("Shadow mode: when enabled, performs all occlusion checks and telemetry without suppressing network packets. Set to false for active wallhack blocking.")]
-	public bool ShadowMode { get; set; } = false;
+	[Description("Shadow mode: when enabled, performs all occlusion checks and telemetry without suppressing network packets. Keep true during calibration.")]
+	public bool ShadowMode { get; set; } = true;
 
 	[Description("Enable corner-peeking velocity and input lead prediction to prevent pop-in when peeking around corners.")]
 	public bool CornerPrediction { get; set; } = true;

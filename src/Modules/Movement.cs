@@ -174,10 +174,12 @@ internal sealed class MovementDetector
         bool jumpedThisTick = false;
         Span<(ulong Button, bool Pressed, float When)> nullsBuffer = stackalloc (ulong, bool, float)[32];
 
-        foreach (var cmd in cmds)
+        for (int cmdIdx = 0; cmdIdx < cmds.Count; cmdIdx++)
         {
+            var cmd = cmds[cmdIdx];
             var pb = cmd.CSGOUserCmd;
             int cmdNum = (int)cmd.CommandNumber;
+            bool isNewestCmd = (cmdIdx == cmds.Count - 1);
 
             if (!pb.Accessor.HasField("base"))
             {
@@ -211,7 +213,7 @@ internal sealed class MovementDetector
                 }
             }
 
-            if (_config.EnableAutoStrafeCheck && b.Accessor.HasField("viewangles") && cmds.Count == 1)
+            if (_config.EnableAutoStrafeCheck && b.Accessor.HasField("viewangles") && isNewestCmd)
             {
                 _players[slot].PushSample(cmdNum, b.Viewangles);
                 if (isAirborne)
@@ -220,7 +222,7 @@ internal sealed class MovementDetector
                 }
             }
 
-            if (_config.EnableNullsCheck && isAirborne && b.SubtickMoves != null && b.SubtickMoves.Count > 0 && cmds.Count == 1)
+            if (_config.EnableNullsCheck && isAirborne && b.SubtickMoves != null && b.SubtickMoves.Count > 0 && isNewestCmd)
             {
                 int count = Math.Min(b.SubtickMoves.Count, 32);
                 for (int i = 0; i < count; i++)
@@ -232,7 +234,7 @@ internal sealed class MovementDetector
             }
         }
 
-        if (_config.EnableBhopCheck && cmds.Count <= 2)
+        if (_config.EnableBhopCheck)
         {
             RecordBhopStep(slot, player, playerName, isAirborne, jumpedThisTick);
         }

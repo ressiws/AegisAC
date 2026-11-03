@@ -9,7 +9,7 @@ namespace AegisAC.Telemetry;
 /// <summary>
 /// Aegis Cumulative Conviction Engine (ACCE).
 /// Integrates cross-module Bayesian suspicion scoring with exponential temporal half-life decay
-/// and multi-subsystem entropy synergy multipliers to detect closet cheating suites with mathematical certainty.
+/// and multi-subsystem entropy synergy multipliers to detect closet cheating suites with high-confidence statistical correlation.
 /// </summary>
 public sealed class ConvictionEngine
 {
@@ -198,6 +198,12 @@ public sealed class ConvictionEngine
 			(string.Equals(i.Detection, detection, StringComparison.OrdinalIgnoreCase) ||
 			 (detection.Contains("UNTRUSTED", StringComparison.OrdinalIgnoreCase) && i.Detection.Contains("UNTRUSTED", StringComparison.OrdinalIgnoreCase))));
 
+		if (isDuplicateCrossModuleReport)
+		{
+			// Discard duplicate reports of the exact same physical event across modules to prevent double-scoring
+			return false;
+		}
+
 		suspect.DetectionCounts[detection] = (now, repeatCount + 1);
 
 		float addedScore = baseWeight * (float)Math.Pow(0.5, repeatCount);
@@ -205,7 +211,7 @@ public sealed class ConvictionEngine
 
 		suspect.RecentIncidents.Add(new SuspectIncident
 		{
-			Module = isDuplicateCrossModuleReport ? suspect.RecentIncidents.Last().Module : module,
+			Module = module,
 			Detection = detection,
 			Details = details,
 			Timestamp = now,
