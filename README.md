@@ -13,6 +13,7 @@
 [![Runtime](https://img.shields.io/badge/.NET-10.0-purple.svg?style=for-the-badge&logo=dotnet)](https://dotnet.microsoft.com/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/aaWRywQaSq)
+[![Trusted by TugaArmy](https://img.shields.io/badge/Trusted%20by-TugaArmy-2ea44f.svg?style=for-the-badge&logo=shield)](https://tugaarmy.pt)
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-swisser-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/swisser)
 
 <br/>
@@ -26,6 +27,7 @@
 ## 📌 Table of Contents
 
 - [Overview](#-overview)
+  - [Trusted by TugaArmy](#-trusted-by-tugaarmy)
 - [Showcase](#-showcase)
 - [Key Features](#-key-features)
 - [Architecture & Modular Design](#-architecture--modular-design)
@@ -58,6 +60,14 @@
 - **Server-Side Anti-WallHack:** Directly hooks engine entity transmission (`CheckTransmit`) to withhold occluded enemy pawns and equipment from network packets, neutralizing ESP/wallhacks entirely.
 - **Evidence-Based Sanctions:** Punishments are only executed when multiple, high-confidence evidence points are collected across a sliding time window, mitigating false positives.
 - **Extensible Architecture:** Modular design allowing server owners to select independent punishment types (`ban`, `kick`, or `none`) and granular settings for each of the **10 dedicated detection modules**.
+
+### 🤝 Trusted by TugaArmy
+
+> **In partnership with [TugaArmy](https://tugaarmy.pt) · CS2 Community & Server Network**
+>
+> AegisAC was developed in collaboration with **TugaArmy** and is currently deployed and battle-tested across its Counter-Strike 2 server network.
+>
+> 🌐 [Visit TugaArmy](https://tugaarmy.pt)
 
 ---
 
