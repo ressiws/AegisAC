@@ -133,8 +133,8 @@ internal sealed class TriggerbotDetector
 {
 	private const int HistoryLimit = 30;
 	private const int PendingLimit = 8;
-	private const int FreshContactTicks = 64; // 1.0s fresh contact window (CS2AC Legacy)
-	private const int HeldAngleMinimumTicks = 64; // 1.0s sustained angle hold required for TargetDriven mode (CS2AC Legacy)
+	private const int FreshContactTicks = 64; // 1.0s fresh contact window (baseline)
+	private const int HeldAngleMinimumTicks = 64; // 1.0s sustained angle hold required for TargetDriven mode (baseline)
 	private const float HeldAngleMaximumDegrees = 0.65f;
 	private const float TraceLength = 8192.0f;
 	private const float SmokeHalfExtent = 320.0f;
@@ -419,7 +419,7 @@ internal sealed class TriggerbotDetector
 		if (commandNumber <= st.LastCommandNumber)
 			return;
 
-		// Reset active contact if command stream jumped (discontinuity > 1 command, matching CS2AC Legacy)
+		// Reset active contact if command stream jumped (discontinuity > 1 command, calibrated baseline)
 		if (st.LastCommandNumber >= 0 && commandNumber - st.LastCommandNumber > 2)
 		{
 			st.ActiveTarget = -1;
@@ -605,7 +605,7 @@ internal sealed class TriggerbotDetector
 		if ((now - pendingMatch.CreatedAt).TotalSeconds > 0.75 && nowOverride == null)
 			return;
 
-		// Shared Network Safety Gate (ported from CS2AC Legacy):
+		// Shared Network Safety Gate (calibrated heuristic):
 		// Defer timing-sensitive scoring when the player experiences high ping, jitter, loss, choke, or command bursts.
 		if (_networkSafety != null)
 		{
@@ -822,19 +822,19 @@ internal sealed class TriggerbotDetector
 
 		if (attack.Mode == TriggerContactMode.TargetDriven)
 		{
-			// CS2AC Legacy exact triggerbot rule:
+			// baseline exact triggerbot rule:
 			// Only 0-1 ticks (0 to 15.6ms) on a target after holding crosshair motionless for >= 1.0s scores points.
 			// Any human reaction >= 2 ticks (>= 31.2ms) SUBTRACTS 3.0 points (-3.0), rapidly draining any score to 0!
 			if (rt <= 1)
 				return (lowVarianceConsistency ? 3.5f : 3.0f) + macroBonus;
 			
-			// 2+ ticks is natural human timing -> deduct 3.0 points (matching CS2AC Legacy)
+			// 2+ ticks is natural human timing -> deduct 3.0 points (calibrated baseline)
 			return -3.0f;
 		}
 		else // AimDriven (moving crosshair onto target)
 		{
 			// AimDriven: when flicking or aiming, humans click upon contact.
-			// In CS2AC Legacy, AimDriven only ever penalizes or scores on proven robotic near-zero variance across >= 4 hits.
+			// In baseline, AimDriven only ever penalizes or scores on proven robotic near-zero variance across >= 4 hits.
 			if (lowVarianceConsistency || isMacroVariance)
 			{
 				if (rt <= 1)

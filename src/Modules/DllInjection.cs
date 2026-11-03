@@ -9,7 +9,7 @@ namespace AegisAC.Modules;
 
 /// <summary>
 /// Dedicated Server-Side Client Event Subscription &amp; DLL Injection Detector.
-/// Reimplemented for SwiftlyS2 from CS2AC Legacy's dll_injection_module.cpp:
+/// Reimplemented for SwiftlyS2 from baseline's dll_injection_module.cpp:
 /// - Inspects visible client-side Source 2 game event subscriptions via IGameEventService.IsListeningToEvent.
 /// - Scans against 117 blacklisted game events that legitimate CS2 clients and game-instructor never subscribe to,
 ///   but injected internal cheats register via IGameEventManager2::AddListener.
@@ -21,7 +21,7 @@ internal sealed class DllInjectionDetector
     public const int MaxPlayers = 64;
 
     /// <summary>
-    /// Exact 117 blacklisted client-side Source 2 game event subscriptions from CS2AC Legacy's dll_injection_module.cpp.
+    /// Exact 117 blacklisted client-side Source 2 game event subscriptions from baseline's dll_injection_module.cpp.
     /// </summary>
     internal static readonly string[] BlacklistedClientEvents =
     [

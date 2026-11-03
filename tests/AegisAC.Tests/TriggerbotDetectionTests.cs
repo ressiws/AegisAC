@@ -97,7 +97,7 @@ public class TriggerbotDetectionTests
         // Execute 4 holds where attacker holds crosshair static at Yaw 0 for >= 1.0s (>= 64 ticks) and enemy crosses into crosshair (Y=0), firing 1 tick later
         for (int rep = 0; rep < 4; rep++)
         {
-            // Enemy off-crosshair for 70 ticks while attacker holds completely still (>= 1.0s held angle matching CS2AC Legacy)
+            // Enemy off-crosshair for 70 ticks while attacker holds completely still (>= 1.0s held angle calibrated baseline)
             TestPlayerFactory.SetPosition(victimState, new Vector(500f, 100f, 0f));
             for (int w = 0; w < 70; w++)
             {
@@ -127,7 +127,7 @@ public class TriggerbotDetectionTests
         var (victim, victimState) = h.AddPlayer(2, team: 3, origin: new Vector(500f, 100f, 0f));
 
         int tick = 1;
-        // When holding an angle and reacting with normal human speed (>= 2 ticks / >= 31ms), CS2AC subtracts 3.0 points (-3.0f).
+        // When holding an angle and reacting with normal human speed (>= 2 ticks / >= 31ms), AegisAC subtracts 3.0 points (-3.0f).
         for (int rep = 0; rep < 6; rep++)
         {
             TestPlayerFactory.SetPosition(victimState, new Vector(500f, 100f, 0f));

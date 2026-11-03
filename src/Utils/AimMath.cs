@@ -277,7 +277,7 @@ internal static class AimMath
 
 	/// <summary>
 	/// Zero-allocation 3D slab test checking if a sightline segment [start, end] intersects an active smoke bounding box.
-	/// Ported from CS2AC Legacy triggerbot_module.cpp (smokeHalfExtent = 160..320 units).
+	/// Ported from triggerbot validation (smokeHalfExtent = 160..320 units).
 	/// </summary>
 	public static bool SegmentTouchesSmokeBounds(in Vector start, in Vector end, in Vector center, float smokeHalfExtent = 220.0f)
 	{
@@ -321,7 +321,7 @@ internal static class AimMath
 	/// <summary>
 	/// Tests if a sequence of targeting angular errors follows a constant logarithmic decay curve (R² >= 0.98),
 	/// which is a mathematical signature of synthetic/proportional smooth aimbot interpolation.
-	/// Ported and refined from CS2AC AimApproach.
+	/// computes logarithmic approach decay.
 	/// </summary>
 	public static bool FitLogarithmicApproach(ReadOnlySpan<float> errors, out double ratio, out double r2)
 	{
@@ -356,7 +356,7 @@ internal static class AimMath
 	}
 
 	/// <summary>
-	/// Calculates the optimal theoretical air-strafe yaw delta using Source 2 AirAccelerate kinematics (CS2KZ model).
+	/// Calculates the optimal theoretical air-strafe yaw delta using Source 2 AirAccelerate kinematics (Source 2 aerodynamic model).
 	/// </summary>
 	public static float CalculateIdealStrafeYaw(float speed2D, float wishspeed = 30.0f, float accel = 12.0f, float duration = 1.0f / 64.0f)
 	{

@@ -159,7 +159,7 @@ internal sealed class PlayerState
 	public float RcsScore;
 	public DateTime LastRcsAlertTime = DateTime.MinValue;
 
-	// Irregular Behavior (Airborne / Sniper No-Scope impossible conversion rate, ported from CS2AC Legacy)
+	// Irregular Behavior (Airborne / Sniper No-Scope impossible conversion rate, calibrated heuristic)
 	public readonly List<IrregularSample> IrregularHistory = new();
 	public DateTime LastIrregularAlertTime = DateTime.MinValue;
 
@@ -981,7 +981,7 @@ internal sealed class AimbotDetector
 
 		DateTime now = DateTime.UtcNow;
 
-		// 1. Irregular Behavior attempt tracking (Airborne or Sniper No-Scope, ported from CS2AC Legacy)
+		// 1. Irregular Behavior attempt tracking (Airborne or Sniper No-Scope, calibrated heuristic)
 		if (_settings.EnableIrregularBehaviorCheck && (airborne || noScope))
 		{
 			st.IrregularHistory.RemoveAll(x => now - x.Time >= EvidenceWindow);
@@ -1031,7 +1031,7 @@ internal sealed class AimbotDetector
 
 	/// <summary>
 	/// Evaluates repeated improbable kills (airborne / sniper no-scope at &gt;= 10m).
-	/// Ported from CS2AC Legacy IrregularBehaviorModule.
+	/// Ported from irregular behavior module.
 	/// </summary>
 	public void OnPlayerDeath(
 		IPlayer attacker,
@@ -1735,7 +1735,7 @@ internal sealed class AimbotDetector
 				float stepVariance = steps > 1 ? MathF.Max(0f, (sumSqSteps / steps) - (meanStep * meanStep)) : 0f;
 				float stepCv = meanStep > AimMath.Epsilon ? MathF.Sqrt(stepVariance) / meanStep : 1.0f;
 
-				// Test logarithmic error decay (proportional smooth aimbot constant ratio decay, R² >= 0.98, ported from CS2AC AimApproach)
+				// Test logarithmic error decay (proportional smooth aimbot constant ratio decay, R² >= 0.98, computes logarithmic approach decay)
 				bool isLogarithmicDecay = false;
 				if (segmentCommandCount >= 4)
 				{

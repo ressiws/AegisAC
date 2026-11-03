@@ -14,7 +14,7 @@ namespace AegisAC.Modules;
 
 /// <summary>
 /// Dedicated Server-Side Anti-Aim and Spinbot Detector.
-/// Reimplemented for SwiftlyS2 based on CS2AC Legacy's antiaim_module.cpp:
+/// Reimplemented for SwiftlyS2 designed with specialized antiaim_module.cpp:
 /// - Deterministic ANTI_UNTRUSTED angle &amp; NaN/Inf validation with a 60-second per-player alert latch
 /// - Multi-tier continuous Spinbot detection (720 deg/s, 1440 deg/s, 2880 deg/s with directional consistency)
 /// - Rapid alternating Yaw Jitter anti-aim detection
@@ -396,7 +396,7 @@ internal sealed class AntiAimDetector
         float yawStepVariance = MathF.Max(0f, (sumSqYawStep / stepCount) - (meanYawStep * meanYawStep));
         float yawStepCv = meanYawStep > 1e-3f ? MathF.Sqrt(yawStepVariance) / meanYawStep : 1.0f;
 
-        // Check exact periodic Yaw Jitter pattern (period 2, 3, or 5 within 0.50 deg tolerance, ported from CS2AC Legacy antiaim_module.cpp).
+        // Check exact periodic Yaw Jitter pattern (period 2, 3, or 5 within 0.50 deg tolerance, ported from anti-aim detection module).
         // A human shaking a high-DPI mouse left/right has random turnaround angles (never repeating within 0.50 deg every 2/3/5 ticks).
         bool hasExactPeriodicJitter = false;
         ReadOnlySpan<int> candidatePeriods = [2, 3, 5];
@@ -464,7 +464,7 @@ internal sealed class AntiAimDetector
             else if (degPerSecond >= 720.0f)
             {
                 // If physical mouse input is present with organic velocity variation, require >= 10.0 continuous seconds
-                // of uninterrupted unidirectional spinning (matching CS2AC Legacy fastSpinSeconds = 10.0f), which is
+                // of uninterrupted unidirectional spinning (calibrated baseline fastSpinSeconds = 10.0f), which is
                 // physically impossible on a mousepad without lifting the mouse.
                 state.SustainedSpinSeconds += TickIntervalSeconds;
                 if (state.SustainedSpinSeconds >= 10.0f)

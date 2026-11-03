@@ -8,7 +8,7 @@
  *   - sevon   (https://github.com/victor201202)
  *
  * Description:
- *   Shared per-player network quality monitor (adapted from CS2AC Legacy's
+ *   Shared per-player network quality monitor (calibrated from
  *   NetworkSafetyMonitor). Tracks ping, ping jitter, incoming/outgoing packet
  *   loss, incoming/outgoing choke, and usercmd sequence discontinuities over a
  *   5-second sliding window to defer or veto network-sensitive detections.

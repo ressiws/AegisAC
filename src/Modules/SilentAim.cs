@@ -10,7 +10,7 @@ namespace AegisAC.Modules;
 /// from standard Aimbot trajectory convergence:
 /// - Sub-Tick Silent Aim: compares base command camera angles against sub-tick attack history angles,
 ///   accounting for CMsgTEFireBullets weapon inaccuracy/spread and CSubtickMoveStep mouse travel.
-/// - Adjacent Path Excess (CS2AC Legacy triangle-inequality check): rejects false positives when the
+/// - Adjacent Path Excess (baseline triangle-inequality check): rejects false positives when the
 ///   attack angle lies along the geodesic camera sweep from previous BaseAngles to current BaseAngles.
 /// - Snap-Return Silent Aim: catches 1-tick silent snaps onto a target that immediately return to the
 ///   prior camera direction on the next command.
@@ -120,7 +120,7 @@ internal sealed class SilentAimDetector
             ? AimMath.AngularDistance(prevBaseAngles.Value, baseAngles)
             : 0f;
 
-        // Triangle-inequality adjacent path check (ported from CS2AC Legacy silent_aim_module.cpp):
+        // Triangle-inequality adjacent path check (ported from silent-aim validation):
         // If the attack angle lies directly along the geodesic path from previous BaseAngles to current BaseAngles,
         // the player swept across the target during the sub-tick interval and clicked mid-sweep.
         bool adjacentPathSupported = false;

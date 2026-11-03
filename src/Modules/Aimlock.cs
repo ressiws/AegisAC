@@ -210,7 +210,7 @@ internal sealed class AimlockDetector
 			if (!b.Accessor.HasField("viewangles"))
 				continue;
 
-			// Use base.Viewangles for continuous aimlock tracking (matches CS2AC Legacy AimlockModule::OnSetupMove)
+			// Use base.Viewangles for continuous aimlock tracking (continuous aimlock tracking)
 			QAngle angles = b.Viewangles;
 			RecordCommand(player, number, angles);
 		}

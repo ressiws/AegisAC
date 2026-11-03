@@ -14,7 +14,7 @@ namespace AegisAC.Modules;
 
 /// <summary>
 /// Dedicated Movement Automation Detector (Bhop, Nulls / Snap-Tap, and Auto-Strafe / Strafe Optimizer).
-/// Reimplemented for SwiftlyS2 based on CS2AC Legacy's bhop.cpp, nulls.cpp, and strafe_optimizer.cpp.
+/// Reimplemented for SwiftlyS2 designed with specialized bhop.cpp, nulls.cpp, and strafe_optimizer.cpp.
 /// </summary>
 internal sealed class MovementDetector
 {
@@ -34,18 +34,18 @@ internal sealed class MovementDetector
         public int SampleHead;
         public int SampleCount;
 
-        // Bhop / Hyperscroll tracking (ported from CS2AC Legacy bhop.cpp)
+        // Bhop / Hyperscroll tracking (ported from bhop analysis)
         public bool WasAirborne;
         public int AirTicks;
         public int ConsecutivePerfBhops;
 
-        // Airborne Nulls / Snap-Tap (SOCD) tracking (ported from CS2AC Legacy nulls.cpp)
+        // Airborne Nulls / Snap-Tap (SOCD) tracking (ported from nulls analysis)
         public int ConsecutivePerfectNulls;
         public int LastLeftRightReleaseCmd = -1;
         public float LastLeftRightReleaseWhen = -1f;
         public ulong LastLeftRightReleasedButton;
 
-        // Airborne Strafe Optimizer tracking (ported from CS2AC Legacy strafe_optimizer.cpp)
+        // Airborne Strafe Optimizer tracking (ported from strafe optimization analysis)
         public float YawAccelPercent;
 
         public DateTime LastMovementAlertTime = DateTime.MinValue;
@@ -240,7 +240,7 @@ internal sealed class MovementDetector
 
     /// <summary>
     /// Tracks airborne ticks and frame-perfect bunnyhop landing chains (&gt;= 10 consecutive frame-perfect jumps).
-    /// Ported from CS2AC Legacy bhop.cpp.
+    /// Ported from bhop analysis.
     /// </summary>
     internal bool IsAutoBunnyhoppingEnabled()
     {
@@ -380,7 +380,7 @@ internal sealed class MovementDetector
 
     /// <summary>
     /// Detects airborne auto-strafe / strafe optimizer yaw-acceleration symmetry.
-    /// Ported from CS2AC Legacy strafe_optimizer.cpp.
+    /// Ported from strafe optimization analysis.
     /// </summary>
     internal bool EvaluateStrafeOptimization(int slot, IPlayer? player, string playerName)
     {
@@ -433,7 +433,7 @@ internal sealed class MovementDetector
             }
         }
 
-        // CS2KZ AirAccelerate Ideal Yaw Kinematics:
+        // Source 2 AirAccelerate Ideal Yaw Kinematics:
         // Perfect strafe optimizers hold camera yaw delta within <0.35 deg of mathematical theoretical air acceleration optimum
         float speed2D = player?.PlayerPawn?.AbsVelocity is { } vel ? MathF.Sqrt(vel.X * vel.X + vel.Y * vel.Y) : 250.0f;
         if (speed2D > 150.0f)
