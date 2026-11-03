@@ -15,6 +15,8 @@ internal sealed class SmokeOcclusionTracker
 	private const float SmokeFadeOutSeconds = 16.5f;
 	private const float HeDissipationDuration = 3.0f;
 	private const float HeClearRadiusSq = 250f * 250f;
+	private const float HeLocalClearRadiusSq = 110f * 110f;
+	private const float HeLocalClearDuration = 3.0f;
 
 	private sealed class ActiveSmoke
 	{
@@ -23,7 +25,14 @@ internal sealed class SmokeOcclusionTracker
 		public float DissipatedUntil { get; set; }
 	}
 
+	private sealed class ActiveClearance
+	{
+		public Vector3 Center { get; set; }
+		public float DetonateTime { get; set; }
+	}
+
 	private readonly List<ActiveSmoke> _smokes = new(16);
+	private readonly List<ActiveClearance> _clearances = new(16);
 	private readonly object _lock = new();
 
 	public int ActiveSmokeCount
@@ -70,6 +79,17 @@ internal sealed class SmokeOcclusionTracker
 
 		lock (_lock)
 		{
+			// Clean up expired clearances
+			_clearances.RemoveAll(c => gameTime - c.DetonateTime > HeLocalClearDuration || gameTime < c.DetonateTime);
+			if (_clearances.Count < 32)
+			{
+				_clearances.Add(new ActiveClearance
+				{
+					Center = center,
+					DetonateTime = gameTime
+				});
+			}
+
 			for (int i = 0; i < _smokes.Count; i++)
 			{
 				var smoke = _smokes[i];
@@ -87,6 +107,7 @@ internal sealed class SmokeOcclusionTracker
 		lock (_lock)
 		{
 			_smokes.Clear();
+			_clearances.Clear();
 		}
 	}
 
@@ -124,6 +145,32 @@ internal sealed class SmokeOcclusionTracker
 
 				// Smoke must not be currently dissipated by an HE grenade
 				if (gameTime < smoke.DissipatedUntil)
+				{
+					continue;
+				}
+
+				// Check if ray passes through a localized HE grenade blast clearance hole
+				bool rayCleared = false;
+				for (int c = 0; c < _clearances.Count; c++)
+				{
+					var clearance = _clearances[c];
+					float heAge = gameTime - clearance.DetonateTime;
+					if (heAge < 0f || heAge >= HeLocalClearDuration || clearance.DetonateTime < smoke.DetonateTime)
+					{
+						continue;
+					}
+
+					Vector3 toClearance = clearance.Center - start;
+					float tClear = Math.Clamp(Vector3.Dot(toClearance, rayVec) / rayLengthSq, 0f, 1f);
+					Vector3 closestClear = start + tClear * rayVec;
+					if (Vector3.DistanceSquared(closestClear, clearance.Center) <= HeLocalClearRadiusSq)
+					{
+						rayCleared = true;
+						break;
+					}
+				}
+
+				if (rayCleared)
 				{
 					continue;
 				}

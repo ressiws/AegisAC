@@ -227,4 +227,29 @@ public class AntiWallHackTests
 		tracker.OnRoundReset();
 		Assert.Equal(0, tracker.ActiveSmokeCount);
 	}
+
+	[Fact]
+	public void CornerPredictor_CalculatePingShoulder_ScalesWithLatency()
+	{
+		Assert.Equal(24.0f, CornerPredictor.CalculatePingShoulder(0f, 24.0f));
+		Assert.Equal(24.8f, CornerPredictor.CalculatePingShoulder(50f, 24.0f));
+		Assert.Equal(25.6f, CornerPredictor.CalculatePingShoulder(100f, 24.0f));
+		Assert.True(CornerPredictor.CalculatePingShoulder(500f, 24.0f) <= 48.0f);
+	}
+
+	[Fact]
+	public void SmokeOcclusionTracker_HeClearance_PiercesSmokeLocally()
+	{
+		var tracker = new SmokeOcclusionTracker();
+		var smokeCenter = new Vector3(500f, 500f, 0f);
+		tracker.OnSmokeDetonate(smokeCenter, 10.0f);
+
+		// HE detonates at offset y=570 (80 units away from center)
+		var heCenter = new Vector3(500f, 570f, 15f);
+		tracker.OnHeDetonate(heCenter, 12.0f);
+
+		// Ray passing through y=570 (through the HE clearance hole)
+		bool holeRayBlocked = tracker.IsRayBlockedBySmoke(new Vector3(0f, 570f, 15f), new Vector3(1000f, 570f, 15f), 13.0f, 145.0f);
+		Assert.False(holeRayBlocked, "Ray passing through localized HE clearance hole should not be occluded");
+	}
 }

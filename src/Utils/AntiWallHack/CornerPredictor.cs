@@ -62,4 +62,21 @@ internal static class CornerPredictor
 
 		return fraction >= 1.0f ? 1.0f : Math.Max(0f, fraction - (2.0f / distance));
 	}
+
+	/// <summary>
+	/// Calculates a ping-adaptive lateral shoulder width padding in game units.
+	/// Expands the test hull for high-ping clients so they receive enemy transmission
+	/// smoothly as they peek corners without experiencing pop-in.
+	/// </summary>
+	public static float CalculatePingShoulder(float pingMs, float baseShoulder = 24.0f)
+	{
+		if (!float.IsFinite(pingMs) || pingMs <= 0f)
+		{
+			return baseShoulder;
+		}
+
+		// Scales smoothly: +0.4 units per 25ms of latency up to max 24 units extra
+		float pingBuckets = MathF.Floor(Math.Min(pingMs, 250f) / 25.0f);
+		return Math.Min(baseShoulder + 0.4f * pingBuckets, baseShoulder + 24.0f);
+	}
 }

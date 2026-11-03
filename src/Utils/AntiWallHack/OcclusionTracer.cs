@@ -131,7 +131,12 @@ internal sealed class OcclusionTracer
 				float pingSec = Math.Clamp(ctrl.Ping / 1000.0f, 0f, 0.20f);
 				seconds += pingSec;
 			}
-			Vector3 lead3 = CornerPredictor.CalculateLead(vel3, viewer.Angles.Yaw, viewer.Buttons, seconds, 32.0f);
+			float maxLeadDist = 32.0f;
+			if (_config.PingAdaptivePrediction && viewer.Player?.Controller is { } pCtrl)
+			{
+				maxLeadDist = Math.Clamp(32.0f + 0.15f * Math.Max(0f, pCtrl.Ping), 32.0f, 56.0f);
+			}
+			Vector3 lead3 = CornerPredictor.CalculateLead(vel3, viewer.Angles.Yaw, viewer.Buttons, seconds, maxLeadDist);
 			if (lead3.Length() > 0.05f)
 			{
 				_traceParams.EntitiesToIgnore.Clear();
@@ -229,6 +234,10 @@ internal sealed class OcclusionTracer
 	{
 		var pts = _samplePoints[slot];
 		float pad = DefaultPadding;
+		if (_config.PingAdaptivePrediction && target.Player?.Controller is { } targetCtrl)
+		{
+			pad = CornerPredictor.CalculatePingShoulder(targetCtrl.Ping, DefaultPadding);
+		}
 		Vector lo = target.Mins - new Vector(pad, pad, 0f);
 		Vector hi = target.Maxs + new Vector(pad, pad, pad);
 
