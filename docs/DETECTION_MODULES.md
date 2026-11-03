@@ -75,8 +75,9 @@ This document describes what each module detects, what it reports to server logs
   - Input consistency violations between movement button masks and sub-tick packet records.
   - Rapid name changer spam (frequently changing display name to evade manual moderation).
   - Mouseless aim (significant viewangle changes without recorded physical mouse movement deltas before firing).
+  - Mouse Grid deviation (pre-shot viewangle rotation deviating from the player's learned hardware mouse sensor sensitivity step).
   - Forged attack commands with identical fractional timings.
-- **What it reports**: Flags identifying specific protocol anomalies (`SUBTICK_TAMPER`, `DESUBTICK`, `NAME_CHANGER`, `MOUSELESS_AIM`, `FORGED_CMD`).
+- **What it reports**: Flags identifying specific protocol anomalies (`SUBTICK_TAMPER`, `DESUBTICK`, `NAME_CHANGER`, `MOUSELESS_AIM`, `MOUSE_GRID`, `FORGED_CMD`).
 - **Admin Guidance**: Detects protocol modifications and cheat-specific packet tampering directly at the network/usercmd interface.
 
 ---

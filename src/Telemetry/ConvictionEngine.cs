@@ -92,6 +92,7 @@ public sealed class ConvictionEngine
 		"SILENTAIM" or "SUBTICKSILENTAIM" => 4.0f,
 		"FORGEDCOMMAND" or "WHENREPEAT" => 3.5f,
 		"MOUSELESSAIM" => 3.5f,
+		"MOUSEGRID" or "MOUSE_GRID" => 3.0f,
 		"TRIGGERBOT" or "SYNTHETICINPUT" => 3.0f,
 		"AIMLOCK" or "WALLTRACKING" => 3.0f,
 		"INHUMAN_ACCURACY" => 3.0f,

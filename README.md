@@ -549,14 +549,20 @@ AegisAC configurations are stored in `addons/swiftlys2/configs/plugins/AegisAC/c
       "EnableAutoStrafeCheck": true
     },
 
-    // 7. Exploits & Input Integrity (Subtick Tamper, Desubtick, Invalid Input, NameChanger) module
+    // 7. Exploits & Input Integrity (Subtick Tamper, Desubtick, Invalid Input, NameChanger, Mouseless Aim, Mouse Grid) module
     "Exploits": {
       "Enabled": true,
       "Punishment": "None",
       "EnableSubtickTamperCheck": true,
       "EnableDesubtickCheck": true,
       "EnableInvalidInputCheck": true,
-      "EnableNameChangerCheck": true
+      "EnableNameChangerCheck": true,
+      "EnableMouselessAimCheck": true,
+      "EnableMouseGridCheck": true,
+      "MouseGridMinDegrees": 1.0,
+      "MouseGridThreshold": 5,
+      "MouseGridWindowSeconds": 300,
+      "EnableForgedCommandCheck": true
     },
 
     // 8. Client Event Subscription (DLL Injection) scanner module

@@ -220,6 +220,18 @@ public sealed class ExploitsConfig
 	[Description("Enable Mouseless Aim detection (viewangle rotation >= 1.0 deg with mousedx=0 and mousedy=0 before firing).")]
 	public bool EnableMouselessAimCheck { get; set; } = true;
 
+	[Description("Enable Mouse Grid detection (unexplained viewangle rotation deviating from hardware sensor step before firing).")]
+	public bool EnableMouseGridCheck { get; set; } = true;
+
+	[Description("Minimum unexplained yaw degrees across pre-shot commands required to evaluate a shot for Mouse Grid.")]
+	public float MouseGridMinDegrees { get; set; } = 1.0f;
+
+	[Description("Number of suspicious shots deviating from the mouse sensor grid required to trigger punishment (default: 5).")]
+	public int MouseGridThreshold { get; set; } = 5;
+
+	[Description("Window in seconds for accumulating suspicious Mouse Grid shots (default: 300s).")]
+	public int MouseGridWindowSeconds { get; set; } = 300;
+
 	[Description("Enable Forged Command detection (sub-tick fractional click timing repeats and zero-tick attack history).")]
 	public bool EnableForgedCommandCheck { get; set; } = true;
 }

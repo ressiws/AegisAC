@@ -144,6 +144,10 @@ Verifies sub-tick integrity, usercmd timestamps, input consistency, and rapid na
 | `EnableInvalidInputCheck` | bool | `true` | Verifies movement buttons against recorded sub-tick movement records. |
 | `EnableNameChangerCheck` | bool | `true` | Detects rapid name changing spam (>= 5 name changes within 60 seconds). |
 | `EnableMouselessAimCheck` | bool | `true` | Detects viewangle rotation (>= 1.0 deg) with zero mouse delta movement before firing. |
+| `EnableMouseGridCheck` | bool | `true` | Detects viewangle rotation deviating from the hardware mouse sensor sensitivity step before firing. |
+| `MouseGridMinDegrees` | float | `1.0` | Minimum unexplained yaw degrees across pre-shot commands required to evaluate a shot for Mouse Grid. |
+| `MouseGridThreshold` | int | `5` | Number of suspicious shots deviating from the mouse sensor grid required to trigger punishment. |
+| `MouseGridWindowSeconds` | int | `300` | Window in seconds for accumulating suspicious Mouse Grid shots. |
 | `EnableForgedCommandCheck` | bool | `true` | Detects identical repeated sub-tick fractional timings and zero-tick attack history. |
 
 ### 8. Client ConVar Scanner (`CVarScanner`)
@@ -321,6 +325,10 @@ Sends private in-game chat messages directly to online administrators when a pla
       "EnableInvalidInputCheck": true,
       "EnableNameChangerCheck": true,
       "EnableMouselessAimCheck": true,
+      "EnableMouseGridCheck": true,
+      "MouseGridMinDegrees": 1.0,
+      "MouseGridThreshold": 5,
+      "MouseGridWindowSeconds": 300,
       "EnableForgedCommandCheck": true
     },
 
