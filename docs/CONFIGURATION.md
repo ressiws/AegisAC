@@ -188,9 +188,9 @@ Controls server-side network entity transmission (`CheckTransmit`), withholding 
 | `ShadowMode` | bool | `false` | When true, executes all raycasts and logging without suppressing network packets. |
 | `CornerPrediction` | bool | `true` | Enables velocity and input lead prediction to prevent pop-in around corners. |
 | `CornerPredictionSeconds` | float | `0.12` | Base prediction lookahead horizon in seconds for corner peeking. |
-| `PingAdaptivePrediction` | bool | `true` | Dynamically scales corner prediction with player network ping. |
+| `PingAdaptivePrediction` | bool | `true` | Dynamically scales corner prediction, lateral shoulder padding, and lead distance with player latency. |
 | `TargetPrediction` | bool | `true` | Extrapolates enemy velocity to compensate for peeker's advantage. |
-| `SmokeOcclusion` | bool | `true` | Occludes enemy pawns completely blocked by dense smoke grenade volumes. |
+| `SmokeOcclusion` | bool | `true` | Occludes enemy pawns completely blocked by dense smoke grenade volumes, supporting localized HE blast clearance holes. |
 | `SmokeRadius` | float | `145.0` | Radius in units of smoke grenade occlusion spheres. |
 | `CombatReveal` | bool | `true` | Immediately reveals shooting enemies within audible distance. |
 | `CombatRevealDistance` | float | `1000.0` | Maximum audible reveal distance in units for weapon gunfire. |

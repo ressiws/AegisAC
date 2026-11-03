@@ -59,7 +59,7 @@ Anti-WallHack intercepts the server's entity transmission hook (`CheckTransmit`)
 `ShadowMode` (under `AntiWallHack` in `config.jsonc`) allows server administrators to run the occlusion tracing pipeline and review diagnostic metrics (`awh_status`) without actually withholding entity packets from clients. This enables verifying performance and trace budgets on busy servers before turning on active packet suppression.
 
 #### Does Anti-WallHack cause enemies to pop in unexpectedly?
-To prevent pop-in, AegisAC includes corner peeking velocity prediction (`CornerPrediction`), ping-adaptive lookahead (`PingAdaptivePrediction`), target velocity extrapolation (`TargetPrediction`), and a visibility grace period (`VisibleGraceTicks`). If pop-in occurs on your server, increase `CornerPredictionSeconds` and `VisibleGraceTicks` in `config.jsonc`.
+To prevent pop-in, AegisAC includes corner peeking velocity prediction (`CornerPrediction`), ping-adaptive lookahead and lateral shoulder margin expansion (`PingAdaptivePrediction`), target velocity extrapolation (`TargetPrediction`), and a visibility grace period (`VisibleGraceTicks`). If pop-in occurs on your server, increase `CornerPredictionSeconds` and `VisibleGraceTicks` in `config.jsonc`.
 
 #### Will Anti-WallHack work on community or workshop maps?
 Yes. Anti-WallHack utilizes native server physics raycasts against the loaded map's BSP/VPHYS collision hulls. It operates automatically across standard competitive maps and custom workshop maps without requiring pre-computed navigation meshes.

@@ -302,7 +302,11 @@ Server-side entity transmission occlusion (Fog of War) that actively neutralizes
    - **How it works:** Verifies line of sight across 12 critical sample points per target: eye, torso/center of mass, 8 padded bounding box corners, and 2 forward weapon/hip vectors. Employs preferred-sample caching (testing the clear ray from the prior tick first) and per-tick trace budgets (`MaxTracesPerTick = 2048`) to ensure 0% server tickrate degradation.
 3. **Corner-Peek Prediction & Grace Period Smoothing**
    - **How it works:** Projects viewer eye positions along forward/strafe velocity vectors and movement button inputs (`CornerPredictionSeconds = 0.12s`) to ensure enemies around corners are transmitted before a peeker appears. Maintains `VisibleGraceTicks = 12` ticks of transmission after line-of-sight is broken to prevent visual flickering.
-4. **Complete Entity Bundling**
+4. **Ping-Adaptive Lateral Shoulder Expansion & Lookahead Scaling**
+   - **How it works:** Dynamically widens target bounding padding and scales maximum corner lead distance with player latency (`PingAdaptivePrediction = true`), eliminating corner peeking pop-in for players with high ping.
+5. **Volumetric Smoke Occlusion & Localized HE Blast Clearances**
+   - **How it works:** Suppresses player transmission through dense smoke grenade volumes while naturally recognizing localized channels and holes blown open by HE grenade detonations for 3 seconds.
+6. **Complete Entity Bundling**
    - **How it works:** Collects player pawns, scene node hierarchy children (`CGameSceneNode`), and equipped/carried weapons (`CEconEntity`) so no floating weapons or model attachments leak to ESP cheats.
 
 </details>
@@ -362,6 +366,12 @@ Guards against protocol-level tampering, usercmd sub-tick manipulation, and expl
    - **How it works:** Validates consistency between command button bitmasks (`buttonstate1`, `buttonstate2`, `buttonstate3`) and registered sub-tick actions.
 4. **Name-Changer Spam (`NameChanger`)**
    - **How it works:** Detects malicious automated scripts rapidly changing player names to flood server logs or impersonate administrators.
+5. **Mouseless Aim Detection (`MouselessAim`)**
+   - **How it works:** Detects weapon discharge preceded by significant viewangle rotation without any physical mouse movement (`mousedx = 0`, `mousedy = 0`).
+6. **Mouse Grid Sensor Step Consistency (`MouseGrid`)**
+   - **How it works:** Learns the player's true hardware mouse sensitivity step and flags unnatural pre-shot angle rotations that deviate from the optical sensor's physical grid counts.
+7. **Forged Command Detection (`ForgedCommand`)**
+   - **How it works:** Identifies suspicious usercmd attacks with zero tick counts or synthetic sub-tick fractional click timing repeats.
 
 </details>
 

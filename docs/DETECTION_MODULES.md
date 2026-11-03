@@ -103,7 +103,7 @@ This document describes what each module detects, what it reports to server logs
 - **What it detects & prevents**:
   - Prevents wallhacks and radar ESP by controlling network entity transmission (`CheckTransmit`).
   - Enemy players behind solid walls and occluding geometry are omitted from network packets sent to clients who have no legitimate line of sight.
-  - Features corner peeking prediction, ping-adaptive lead compensation, target velocity extrapolation, volumetric smoke grenade occlusion, and gunshot combat reveal.
+  - Features corner peeking prediction, ping-adaptive lead compensation, ping-adaptive lateral shoulder width padding, target velocity extrapolation, volumetric smoke grenade occlusion with localized HE blast clearance holes, and gunshot combat reveal.
   - Includes a `ShadowMode` setting allowing server owners to evaluate occlusion decisions and performance before actively withholding packets.
 - **What it reports**: Occlusion statistics, visible transitions, and trace execution counts via `awh_status`.
 - **Admin Guidance**: Detailed tuning options for trace budgets (`MaxTracesPerTick`) and peek tolerances (`CornerPredictionSeconds`, `VisibleGraceTicks`) allow optimizing for competitive integrity and server performance.
