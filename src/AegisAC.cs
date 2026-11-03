@@ -43,6 +43,7 @@ public sealed class AegisAC : BasePlugin
 	private CVarScannerDetector _cvarScanner = null!;
 	private AntiWallHackDetector _antiWallHack = null!;
 	private ConvictionEngine _conviction = null!;
+	private readonly Dictionary<int, DateTime> _lastStaffAlertTimes = new();
 	private IDisposable? _configChangeToken;
 	private Guid _fireBulletsHookGuid;
 	private bool _hasFireBulletsHook;
@@ -364,6 +365,7 @@ public sealed class AegisAC : BasePlugin
 		_cvarScanner.ResetPlayer(e.PlayerId);
 		_antiWallHack.ResetPlayer(e.PlayerId);
 		_conviction?.ResetPlayer(e.PlayerId);
+		_lastStaffAlertTimes.Remove(e.PlayerId);
 	}
 
 	private void OnMapLoad(SwiftlyS2.Shared.Events.IOnMapLoadEvent e)
@@ -379,6 +381,7 @@ public sealed class AegisAC : BasePlugin
 		_dllInjection.ResetAll();
 		_cvarScanner.ResetAll();
 		_antiWallHack.OnMapLoad();
+		_lastStaffAlertTimes.Clear();
 	}
 
 	[GameEventHandler(HookMode.Post)]
@@ -618,6 +621,54 @@ public sealed class AegisAC : BasePlugin
 		}
 	}
 
+	private void NotifyStaffInGame(IPlayer suspect, string moduleName, string detection, string evidence, bool isConviction = false)
+	{
+		if (!_config.StaffAlerts.Enabled || !suspect.IsValid)
+			return;
+
+		DateTime now = DateTime.UtcNow;
+		int slot = suspect.PlayerID;
+
+		if (!isConviction)
+		{
+			if (_lastStaffAlertTimes.TryGetValue(slot, out var lastTime))
+			{
+				if ((now - lastTime).TotalSeconds < Math.Max(1.0f, _config.StaffAlerts.CooldownSeconds))
+					return;
+			}
+			_lastStaffAlertTimes[slot] = now;
+		}
+
+		string suspectName = suspect.Controller?.PlayerName ?? $"#{slot}";
+		string flag = !string.IsNullOrWhiteSpace(_config.StaffAlerts.PermissionFlag) ? _config.StaffAlerts.PermissionFlag : "@css/generic";
+
+		string message = isConviction
+			? $" \x04[{Prefix}]\x01 \x02[CONVICTION ALERT]\x01 Suspect \x07{suspectName}\x01 reached conviction threshold! (\x0F{detection}\x01 - {evidence})"
+			: $" \x04[{Prefix}]\x01 \x09[STAFF ALERT]\x01 Suspect \x07{suspectName}\x01 flagged for \x0F{detection}\x01 (\x06{moduleName}\x01 - {evidence})";
+
+		foreach (var admin in Core.PlayerManager.GetAllValidPlayers())
+		{
+			if (admin == null || !admin.IsValid || admin.IsFakeClient || admin.PlayerID == slot)
+				continue;
+
+			bool hasPerm = false;
+			try
+			{
+				hasPerm = Core.Permission.PlayerHasPermission(admin.SteamID, flag);
+			}
+			catch { }
+
+			if (hasPerm)
+			{
+				try
+				{
+					admin.SendChat(message);
+				}
+				catch { }
+			}
+		}
+	}
+
 	private void AnnounceDetection(IPlayer player, string moduleName, string detection, string evidence, PunishmentType punishment)
 	{
 		string name = player.Controller?.PlayerName ?? $"#{player.PlayerID}";
@@ -626,12 +677,16 @@ public sealed class AegisAC : BasePlugin
 
 		_punishmentManager.Punish(player, punishment, moduleName, detection);
 
+		// Send private stealth in-game chat alert to online staff members
+		NotifyStaffInGame(player, moduleName, detection, evidence, isConviction: false);
+
 		// Feed detection telemetry into the Cumulative Conviction Engine
 		if (_conviction != null && _conviction.NoteEvidence(player, moduleName, detection, evidence, out bool convicted, out string convictionSummary))
 		{
 			string convDetails = $"Cumulative Conviction triggered for {name}: {convictionSummary}";
 			Utils.Log($" \x04[{Prefix}]\x01 \x07{name}\x01 \x0FCONVICTED\x01 by Cumulative Evidence Matrix: {convictionSummary}");
 			Utils.ConsoleLog($"[CumulativeConviction] {name} ({player.SteamID}) {convDetails}");
+			NotifyStaffInGame(player, "CumulativeConviction", "Convicted", convictionSummary, isConviction: true);
 			_punishmentManager.Punish(player, _config.Conviction.Punishment, "CumulativeConviction", convictionSummary);
 		}
 

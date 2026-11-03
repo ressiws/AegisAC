@@ -305,6 +305,21 @@ public sealed class DllInjectionConfig
 /// <summary>
 /// Configuration for Discord webhook integration.
 /// </summary>
+/// <summary>
+/// Configuration for private in-game chat notifications to online staff members.
+/// </summary>
+public sealed class StaffAlertsConfig
+{
+	[Description("Enable or disable private in-game chat notifications to online staff members.")]
+	public bool Enabled { get; set; } = true;
+
+	[Description("Permission flag or tag required to receive in-game staff alerts (e.g. '@css/generic', '@css/ban', '@aegis/staff').")]
+	public string PermissionFlag { get; set; } = "@css/generic";
+
+	[Description("Minimum cooldown in seconds between in-game staff notifications for the same suspect to avoid chat spam (default: 10.0s).")]
+	public float CooldownSeconds { get; set; } = 10.0f;
+}
+
 public sealed class DiscordConfig
 {
 	[Description("Enable or disable Discord webhook alert notifications.")]
@@ -435,4 +450,7 @@ public sealed class AegisConfig
 
 	[Description("Cumulative Conviction Engine (cross-module suspicion aggregation) configuration.")]
 	public ConvictionConfig Conviction { get; set; } = new();
+
+	[Description("In-game private staff chat notifications configuration.")]
+	public StaffAlertsConfig StaffAlerts { get; set; } = new();
 }
