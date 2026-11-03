@@ -393,6 +393,7 @@ public sealed class AegisAC : BasePlugin
 				player,
 				e.Weapon ?? "",
 				CurrentTick);
+			_exploits.OnWeaponFire(player, CurrentTick);
 		}
 
 		return HookResult.Continue;

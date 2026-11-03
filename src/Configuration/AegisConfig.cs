@@ -216,6 +216,12 @@ public sealed class ExploitsConfig
 
 	[Description("Enable NameChanger spam detection (>= 5 visible name changes within 60 seconds).")]
 	public bool EnableNameChangerCheck { get; set; } = true;
+
+	[Description("Enable Mouseless Aim detection (viewangle rotation >= 1.0 deg with mousedx=0 and mousedy=0 before firing).")]
+	public bool EnableMouselessAimCheck { get; set; } = true;
+
+	[Description("Enable Forged Command detection (sub-tick fractional click timing repeats and zero-tick attack history).")]
+	public bool EnableForgedCommandCheck { get; set; } = true;
 }
 
 /// <summary>

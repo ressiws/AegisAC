@@ -433,6 +433,19 @@ internal sealed class MovementDetector
             }
         }
 
+        // CS2KZ AirAccelerate Ideal Yaw Kinematics:
+        // Perfect strafe optimizers hold camera yaw delta within <0.35 deg of mathematical theoretical air acceleration optimum
+        float speed2D = player?.PlayerPawn?.AbsVelocity is { } vel ? MathF.Sqrt(vel.X * vel.X + vel.Y * vel.Y) : 250.0f;
+        if (speed2D > 150.0f)
+        {
+            float idealYawStep = AimMath.CalculateIdealStrafeYaw(speed2D);
+            float actualYawStep = MathF.Abs(AimMath.YawDelta(hist[2].Angles.Y, hist[1].Angles.Y));
+            if (MathF.Abs(actualYawStep - idealYawStep) < 0.35f)
+            {
+                matched = true;
+            }
+        }
+
         state.YawAccelPercent = state.YawAccelPercent * 0.95f + (matched ? 0.05f : 0.0f);
         if (state.YawAccelPercent > 0.90f && (DateTime.UtcNow - state.LastMovementAlertTime).TotalSeconds >= 15.0)
         {

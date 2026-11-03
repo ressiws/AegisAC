@@ -1735,12 +1735,29 @@ internal sealed class AimbotDetector
 				float stepVariance = steps > 1 ? MathF.Max(0f, (sumSqSteps / steps) - (meanStep * meanStep)) : 0f;
 				float stepCv = meanStep > AimMath.Epsilon ? MathF.Sqrt(stepVariance) / meanStep : 1.0f;
 
+				// Test logarithmic error decay (proportional smooth aimbot constant ratio decay, R² >= 0.98, ported from CS2AC AimApproach)
+				bool isLogarithmicDecay = false;
+				if (segmentCommandCount >= 4)
+				{
+					Span<float> errSpan = stackalloc float[segmentCommandCount];
+					int errCount = 0;
+					for (int i = start; i <= shotIdx; i++)
+					{
+						errSpan[errCount++] = smoothPoints[i].Error;
+					}
+					if (AimMath.FitLogarithmicApproach(errSpan, out double logRatio, out double logR2) && logR2 >= 0.98 && logRatio is >= 0.35 and <= 0.95)
+					{
+						isLogarithmicDecay = true;
+					}
+				}
+
 				// Monotonic deceleration (exponential/proportional smoother) OR constant-velocity linear smoother
-				// meeting Vanguard MIN_VARIANCE (< 0.05) / PATTERN_VARIANCE (< 8.157%) or step CV <= 0.28 with zero sign reversals
+				// meeting Vanguard MIN_VARIANCE (< 0.05) / PATTERN_VARIANCE (< 8.157%) or step CV <= 0.28 or log decay fit with zero sign reversals
 				bool isMechanicalProfile = (accelerationSpikes == 0
 					|| stepVariance <= AimMath.Baselines.MinBotVariance
 					|| stepCv <= AimMath.Baselines.PatternVarianceRatio
-					|| stepCv <= 0.28f) && jitterFlips == 0;
+					|| stepCv <= 0.28f
+					|| isLogarithmicDecay) && jitterFlips == 0;
 
 				bool fresh = !st.HasCountedIncident || shot.CommandNumber > st.LastCountedIncidentCommand;
 

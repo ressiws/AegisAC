@@ -317,4 +317,56 @@ internal static class AimMath
 
 		return true;
 	}
+
+	/// <summary>
+	/// Tests if a sequence of targeting angular errors follows a constant logarithmic decay curve (R² >= 0.98),
+	/// which is a mathematical signature of synthetic/proportional smooth aimbot interpolation.
+	/// Ported and refined from CS2AC AimApproach.
+	/// </summary>
+	public static bool FitLogarithmicApproach(ReadOnlySpan<float> errors, out double ratio, out double r2)
+	{
+		ratio = r2 = 0;
+		int n = errors.Length;
+		if (n < 4)
+			return false;
+
+		double sumX = 0, sumY = 0, sumXY = 0, sumXX = 0, sumYY = 0;
+		for (int i = 0; i < n; i++)
+		{
+			if (errors[i] <= 0.01f || (i > 0 && errors[i] >= errors[i - 1]))
+				return false;
+
+			double y = Math.Log(errors[i]);
+			sumX += i;
+			sumY += y;
+			sumXY += i * y;
+			sumXX += i * (double)i;
+			sumYY += y * y;
+		}
+
+		double cov = n * sumXY - sumX * sumY;
+		double varX = n * sumXX - sumX * sumX;
+		double varY = n * sumYY - sumY * sumY;
+		if (varX <= 0 || varY <= 0)
+			return false;
+
+		ratio = Math.Exp(cov / varX);
+		r2 = cov * cov / (varX * varY);
+		return true;
+	}
+
+	/// <summary>
+	/// Calculates the optimal theoretical air-strafe yaw delta using Source 2 AirAccelerate kinematics (CS2KZ model).
+	/// </summary>
+	public static float CalculateIdealStrafeYaw(float speed2D, float wishspeed = 30.0f, float accel = 12.0f, float duration = 1.0f / 64.0f)
+	{
+		double accelSpeed = accel * wishspeed * duration;
+		if (accelSpeed <= 0.0 || speed2D <= 0.0f)
+			return 90.0f;
+		double wishspeedCapped = Math.Min(wishspeed, 30.0f);
+		double value = wishspeedCapped - accelSpeed;
+		if (value <= 0.0)
+			return 90.0f;
+		return (float)(Math.Acos(value / wishspeedCapped) * Rad2Deg);
+	}
 }
