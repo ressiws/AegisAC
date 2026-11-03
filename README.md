@@ -26,6 +26,7 @@
 
 ## 📌 Table of Contents
 
+- [Documentation Guides](#-documentation-guides)
 - [Overview](#-overview)
   - [Trusted by TugaArmy](#-trusted-by-tugaarmy)
 - [Showcase](#-showcase)
@@ -48,6 +49,17 @@
 - [Contributing](#-contributing)
 - [Support & Community](#-support--community)
 - [License](#-license)
+
+---
+
+## 📚 Documentation Guides
+
+For comprehensive operational guides, configuration reference tables, and troubleshooting steps:
+- 📖 [**Installation Guide**](docs/INSTALLATION.md) — System prerequisites, binary placement, source compilation, and verification.
+- ⚙️ [**Configuration Guide**](docs/CONFIGURATION.md) — Comprehensive reference of all configuration keys, defaults, and punishment modes.
+- 🛡️ [**Detection Modules Overview**](docs/DETECTION_MODULES.md) — Detailed administrator guide on what each module observes and reports.
+- 🔧 [**Troubleshooting Guide**](docs/TROUBLESHOOTING.md) — Resolving common setup, Anti-WallHack tuning, and permission issues.
+- ❓ [**Frequently Asked Questions (FAQ)**](docs/FAQ.md) — Architectural overview, performance characteristics, and moderation guidance.
 
 ---
 
@@ -171,6 +183,8 @@ AegisAC is structured into **3 distinct categories** comprising **10 dedicated s
 | **🛡️ III. Protocol & Integrity** | [`Exploits.cs`](src/Modules/Exploits.cs) | `Exploits` | `exploits_status` | `Subtick Tamper` (non-monotonic timestamps), `Desubtick`, `Invalid Input` bits, `NameChanger` |
 | **🛡️ III. Protocol & Integrity** | [`DllInjection.cs`](src/Modules/DllInjection.cs) | `DllInjection` | `dllinjection_status` | `DLL Injection` (117 Blacklisted Client Game Event Subscriptions) |
 | **🛡️ III. Protocol & Integrity** | [`CVarScanner.cs`](src/Modules/CVarScanner.cs) | `CVarScanner` | `cvar_status` | `CVar Manipulation` (`sv_cheats`, `r_drawothermodels`, `mat_wireframe`, `host_timescale`, `fog_enable`, etc.) |
+| **⚖️ Multi-Module** | [`ConvictionEngine.cs`](src/Telemetry/ConvictionEngine.cs) | `Conviction` | `aegis_suspects` | **Cumulative Evidence Matrix**: Cross-module suspicion aggregation with time decay and automated convictions |
+| **📢 Administration** | [`AegisAC.cs`](src/AegisAC.cs) | `StaffAlerts` | — | **Staff In-Game Alerts**: Stealth private chat messages dispatched to online staff members |
 
 ---
 
@@ -570,10 +584,27 @@ AegisAC configurations are stored in `addons/swiftlys2/configs/plugins/AegisAC/c
     // 10. Server-Side Anti-WallHack (Fog of War) module
     "AntiWallHack": {
       "Enabled": true,
+      "ShadowMode": false,
       "CornerPrediction": true,
       "CornerPredictionSeconds": 0.12,
       "VisibleGraceTicks": 12,
       "MaxTracesPerTick": 2048
+    },
+
+    // Cumulative Conviction Engine (cross-module suspicion aggregation)
+    "Conviction": {
+      "Enabled": true,
+      "Punishment": "Ban",
+      "ConvictionThreshold": 10.0,
+      "HalfLifeMinutes": 10.0,
+      "MinimumDistinctModules": 2
+    },
+
+    // In-game private staff chat notifications
+    "StaffAlerts": {
+      "Enabled": true,
+      "PermissionFlag": "@css/generic",
+      "CooldownSeconds": 10.0
     },
 
     // Incident telemetry & demo proof JSON dump configuration
@@ -601,6 +632,7 @@ All commands can be executed via the server console or in-game by authorized adm
 | :--- | :--- | :--- | :--- |
 | `aegis_reload` | `aegisreload` | `@css/root` | Reloads `config.jsonc` dynamically across all 10 modules without restarting the server. |
 | `aegis_status` | `aegisstatus` | `@css/root` | Prints a unified real-time telemetry summary of all 10 detection modules (`Debug: true`). |
+| `aegis_suspects` | — | `@css/root` | Prints active suspects tracked in the Conviction Engine (decayed score, threshold, and module breakdown). |
 | `aimbot_status` | — | `@css/root` | Prints real-time `AimbotDetector` statistics, command correlation, and buffers (`Debug: true`). |
 | `silentaim_status` | — | `@css/root` | Prints real-time `SilentAimDetector` sub-tick and snap-return counters (`Debug: true`). |
 | `triggerbot_status` | — | `@css/root` | Prints real-time `TriggerbotDetector` statistics and active smoke volumes (`Debug: true`). |
