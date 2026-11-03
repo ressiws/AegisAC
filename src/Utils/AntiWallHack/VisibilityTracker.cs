@@ -111,6 +111,7 @@ internal sealed class VisibilityTracker
 	private bool _warnedButtons;
 
 	public int HiddenPairsCount { get; private set; }
+	public int ActivePlayerCount { get; private set; }
 
 	public VisibilityTracker(ISwiftlyCore core, AntiWallHackConfig config, OcclusionTracer tracer)
 	{
@@ -160,6 +161,7 @@ internal sealed class VisibilityTracker
 		}
 		_tracer.Reset();
 		HiddenPairsCount = 0;
+		ActivePlayerCount = 0;
 	}
 
 	public void BeginFrame(int tick)
@@ -185,6 +187,7 @@ internal sealed class VisibilityTracker
 		_pairs.BeginTick();
 		_tracer.BeginTick();
 		HiddenPairsCount = 0;
+		ActivePlayerCount = 0;
 
 		foreach (var player in _core.PlayerManager.GetAllValidPlayers())
 		{
@@ -257,9 +260,8 @@ internal sealed class VisibilityTracker
 			snapshot.Complete = true;
 
 			_players[slot] = snapshot;
+			ActivePlayerCount++;
 		}
-
-		CollectOwnedEquipment();
 
 		for (int i = 0; i < 64; i++)
 		{
@@ -355,33 +357,6 @@ internal sealed class VisibilityTracker
 		return result;
 	}
 
-	private void CollectOwnedEquipment()
-	{
-		var owners = new Dictionary<uint, PlayerSnapshot>();
-		foreach (var snapshot in _players)
-		{
-			if (snapshot != null)
-			{
-				owners[snapshot.Pawn.Index] = snapshot;
-			}
-		}
-
-		foreach (var entity in _core.EntitySystem.GetAllEntitiesByClass<CBaseEntity>())
-		{
-			if (entity is not CEconEntity || !entity.IsValid || !entity.OwnerEntity.IsValid)
-			{
-				continue;
-			}
-
-			if (owners.TryGetValue(entity.OwnerEntity.EntityIndex, out var owner) && entity != owner.Pawn)
-			{
-				if (!owner.Entities.Contains(entity))
-				{
-					owner.Entities.Add(entity);
-				}
-			}
-		}
-	}
 
 	private static void CollectChildren(CGameSceneNode? node, List<CEntityInstance> entities, HashSet<nint> seen, int depth)
 	{

@@ -201,6 +201,11 @@ internal sealed class AntiWallHackDetector : IDisposable
 		int tick = _core.Engine.GlobalVars.TickCount;
 		_tracker.BeginFrame(tick);
 
+		if (_tracker.ActivePlayerCount < 2)
+		{
+			return;
+		}
+
 		// First pass: evaluate viewer visibility for all transmitting players
 		for (int offset = 0; offset < count; offset++)
 		{

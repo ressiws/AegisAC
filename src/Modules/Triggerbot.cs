@@ -163,6 +163,9 @@ internal sealed class TriggerbotDetector
 	private readonly Dictionary<ulong, (float Score, List<TriggerIncident> Incidents, List<(DateTime Time, int ReactionTicks, TriggerContactMode Mode)> History)> _persistentState = new();
 	private readonly List<TriggerSmoke> _smokes = new();
 	private DateTime _smokeStateUnknownUntil = DateTime.MinValue;
+	private readonly List<SwiftlyS2.Shared.SchemaDefinitions.CEntityInstance> _crosshairIgnoreList = new(2);
+	private readonly List<SwiftlyS2.Shared.SchemaDefinitions.CEntityInstance> _hurtIgnoreList = new(2);
+
 
 	public void UpdateConfig(TriggerbotConfig config) => _config = config;
 
@@ -640,10 +643,13 @@ internal sealed class TriggerbotDetector
 							Vector traceEnd = new(vicChest.X - normDir.X * 4.0f, vicChest.Y - normDir.Y * 4.0f, vicChest.Z - normDir.Z * 4.0f);
 							float traceLen = traceStart.Distance(traceEnd);
 
+							_hurtIgnoreList.Clear();
+							if (attackerPawn is { IsValid: true }) _hurtIgnoreList.Add(attackerPawn);
+							if (victimPawn is { IsValid: true }) _hurtIgnoreList.Add(victimPawn);
 							var traceParams = new TraceParams
 							{
 								InteractWith = MaskTrace.Solid,
-								EntitiesToIgnore = new List<SwiftlyS2.Shared.SchemaDefinitions.CEntityInstance> { attackerPawn, victimPawn }
+								EntitiesToIgnore = _hurtIgnoreList
 							};
 
 							var hurtTrace = _traceManager.TraceShapeLine(traceStart, traceEnd, traceParams);
@@ -908,12 +914,15 @@ internal sealed class TriggerbotDetector
 				Vector traceEnd = new(bestPoint.X - forward.X * 4.0f, bestPoint.Y - forward.Y * 4.0f, bestPoint.Z - forward.Z * 4.0f);
 				float traceLen = traceStart.Distance(traceEnd);
 
+				_crosshairIgnoreList.Clear();
+				if (pawn is { IsValid: true })
+				{
+					_crosshairIgnoreList.Add(pawn);
+				}
 				var traceParams = new TraceParams
 				{
 					InteractWith = MaskTrace.Solid,
-					EntitiesToIgnore = pawn is { IsValid: true }
-						? new List<SwiftlyS2.Shared.SchemaDefinitions.CEntityInstance> { pawn }
-						: new List<SwiftlyS2.Shared.SchemaDefinitions.CEntityInstance>()
+					EntitiesToIgnore = _crosshairIgnoreList
 				};
 
 				var trace = _traceManager.TraceShapeLine(traceStart, traceEnd, traceParams);

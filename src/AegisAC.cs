@@ -276,30 +276,52 @@ public sealed class AegisAC : BasePlugin
 	private void OnProcessUsercmds(ref ProcessUsercmdsPreContext ctx)
 	{
 		var player = ctx.Params.Player;
+		if (player == null || !player.IsValid || ctx.Params.Usercmds.Count == 0)
+		{
+			return;
+		}
+
 		int tick = CurrentTick;
 
-		if (player is { IsValid: true, IsFakeClient: false } && ctx.Params.Usercmds.Count > 0)
+		if (!player.IsFakeClient)
 		{
 			int firstCmd = (int)ctx.Params.Usercmds[0].CommandNumber;
 			int lastCmd = (int)ctx.Params.Usercmds[^1].CommandNumber;
 			_networkSafety.OnProcessUsercmds(player.PlayerID, ctx.Params.Usercmds.Count, firstCmd, lastCmd);
 		}
 
-		_detector.OnProcessUsercmds(player, ctx.Params.Usercmds);
-		_triggerbot.OnProcessUsercmds(player, ctx.Params.Usercmds);
-		_aimlock.OnProcessUsercmds(player, ctx.Params.Usercmds);
-		_antiAim.OnProcessUsercmds(player, ctx.Params.Usercmds, tick);
-		_movement.OnProcessUsercmds(player, ctx.Params.Usercmds, tick);
 		_exploits.OnProcessUsercmds(player, ctx.Params.Usercmds, tick);
+
+		var pawn = player.PlayerPawn;
+		if (pawn is { IsValid: true } && pawn.LifeState == 0 && pawn.Health > 0)
+		{
+			_detector.OnProcessUsercmds(player, ctx.Params.Usercmds);
+			_triggerbot.OnProcessUsercmds(player, ctx.Params.Usercmds);
+			_aimlock.OnProcessUsercmds(player, ctx.Params.Usercmds);
+			_antiAim.OnProcessUsercmds(player, ctx.Params.Usercmds, tick);
+			_movement.OnProcessUsercmds(player, ctx.Params.Usercmds, tick);
+		}
 	}
 
 	private void OnSetupMove(ref SetupMoveMovementPreContext ctx)
 	{
+		var player = ctx.Params.Player;
+		if (player == null || !player.IsValid)
+		{
+			return;
+		}
+
+		var pawn = player.PlayerPawn;
+		if (pawn is not { IsValid: true } || pawn.LifeState != 0 || pawn.Health <= 0)
+		{
+			return;
+		}
+
 		int cmdNum = (int)ctx.Params.UserCmd.CommandNumber;
 		int tick = CurrentTick;
-		_detector.OnSetupMove(ctx.Params.Player, cmdNum, tick);
-		_triggerbot.OnSetupMove(ctx.Params.Player, cmdNum, tick);
-		_aimlock.OnSetupMove(ctx.Params.Player, cmdNum, tick);
+		_detector.OnSetupMove(player, cmdNum, tick);
+		_triggerbot.OnSetupMove(player, cmdNum, tick);
+		_aimlock.OnSetupMove(player, cmdNum, tick);
 	}
 
 	private void OnTick()

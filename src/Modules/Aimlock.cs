@@ -269,20 +269,9 @@ internal sealed class AimlockDetector
 
 		rttSeconds = Math.Clamp(rttSeconds, 0.0f, 2.0f);
 
-		float interpTicks = 1.0f;
-		try
-		{
-			string? interpStr = player.GetClientConvarValue("cl_interp_ratio");
-			if (!string.IsNullOrWhiteSpace(interpStr) &&
-				float.TryParse(interpStr, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsedInterp) &&
-				float.IsFinite(parsedInterp) &&
-				parsedInterp >= 0.0f &&
-				parsedInterp <= MaximumInterpolationTicks)
-			{
-				interpTicks = parsedInterp == 0.0f ? 1.0f : parsedInterp;
-			}
-		}
-		catch { }
+		// CS2 uses sub-tick client command packets; baseline visual interpolation is 1 tick.
+		// Avoid per-command client convar queries via native bridge.
+		const float interpTicks = 1.0f;
 
 		return Math.Max(0, (int)MathF.Round(rttSeconds * 64.0f + interpTicks));
 	}
