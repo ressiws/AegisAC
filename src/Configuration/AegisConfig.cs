@@ -264,6 +264,28 @@ public sealed class CVarScannerConfig
 /// <summary>
 /// Configuration for the Client Event Subscription / DLL Injection detection module.
 /// </summary>
+/// <summary>
+/// Configuration for the Cumulative Conviction Engine (cross-module suspicion aggregation).
+/// </summary>
+public sealed class ConvictionConfig
+{
+	[Description("Enable or disable the Cumulative Conviction Engine.")]
+	public bool Enabled { get; set; } = true;
+
+	[Description("Punishment applied when cumulative conviction threshold is exceeded: 'none', 'kick', or 'ban'.")]
+	[JsonConverter(typeof(JsonStringEnumConverter))]
+	public PunishmentType Punishment { get; set; } = PunishmentType.Ban;
+
+	[Description("Cumulative conviction score threshold to trigger action (default: 10.0 points).")]
+	public float ConvictionThreshold { get; set; } = 10.0f;
+
+	[Description("Score decay half-life in minutes (default: 10.0 min). Evidence decays naturally over time.")]
+	public float HalfLifeMinutes { get; set; } = 10.0f;
+
+	[Description("Minimum distinct modules required for cross-module synergy multiplier boost (default: 2).")]
+	public int MinimumDistinctModules { get; set; } = 2;
+}
+
 public sealed class DllInjectionConfig
 {
 	[Description("Enable or disable the Client Event Subscription (DLL Injection) scanner module.")]
@@ -410,4 +432,7 @@ public sealed class AegisConfig
 
 	[Description("Discord webhook notifications configuration.")]
 	public DiscordConfig Discord { get; set; } = new();
+
+	[Description("Cumulative Conviction Engine (cross-module suspicion aggregation) configuration.")]
+	public ConvictionConfig Conviction { get; set; } = new();
 }

@@ -42,6 +42,7 @@ public sealed class AegisAC : BasePlugin
 	private DllInjectionDetector _dllInjection = null!;
 	private CVarScannerDetector _cvarScanner = null!;
 	private AntiWallHackDetector _antiWallHack = null!;
+	private ConvictionEngine _conviction = null!;
 	private IDisposable? _configChangeToken;
 	private Guid _fireBulletsHookGuid;
 	private bool _hasFireBulletsHook;
@@ -65,6 +66,7 @@ public sealed class AegisAC : BasePlugin
 		_configChangeToken = ChangeToken.OnChange(() => Core.Configuration.Manager.GetReloadToken(), LoadConfig);
 
 		_punishmentManager = new PunishmentManager(Core, _config);
+		_conviction = new ConvictionEngine(_config.Conviction);
 		_networkSafety = new NetworkSafetyMonitor();
 
 		_detector = new AimbotDetector(
@@ -188,7 +190,7 @@ public sealed class AegisAC : BasePlugin
 			Utils.ConsoleLog($"CMsgTEFireBullets netmessage hook unavailable (using conservative spread fallback): {ex.Message}");
 		}
 
-		Utils.Log("initialized. Commands: aegis_status aimbot_status silentaim_status triggerbot_status aimlock_status antiaim_status dllinjection_status cvar_status awh_status aegis_reload");
+		Utils.Log("initialized. Commands: aegis_status aegis_suspects aimbot_status silentaim_status triggerbot_status aimlock_status antiaim_status dllinjection_status cvar_status awh_status aegis_reload");
 	}
 
 	public override void Unload()
@@ -232,6 +234,7 @@ public sealed class AegisAC : BasePlugin
 			_dllInjection?.UpdateConfig(_config.DllInjection);
 			_cvarScanner?.UpdateConfig(_config.CVarScanner);
 			_antiWallHack?.UpdateConfig(_config.AntiWallHack);
+			_conviction?.UpdateConfig(_config.Conviction);
 		}
 	}
 
@@ -360,6 +363,7 @@ public sealed class AegisAC : BasePlugin
 		_dllInjection.ResetPlayer(e.PlayerId);
 		_cvarScanner.ResetPlayer(e.PlayerId);
 		_antiWallHack.ResetPlayer(e.PlayerId);
+		_conviction?.ResetPlayer(e.PlayerId);
 	}
 
 	private void OnMapLoad(SwiftlyS2.Shared.Events.IOnMapLoadEvent e)
@@ -622,6 +626,15 @@ public sealed class AegisAC : BasePlugin
 
 		_punishmentManager.Punish(player, punishment, moduleName, detection);
 
+		// Feed detection telemetry into the Cumulative Conviction Engine
+		if (_conviction != null && _conviction.NoteEvidence(player, moduleName, detection, evidence, out bool convicted, out string convictionSummary))
+		{
+			string convDetails = $"Cumulative Conviction triggered for {name}: {convictionSummary}";
+			Utils.Log($" \x04[{Prefix}]\x01 \x07{name}\x01 \x0FCONVICTED\x01 by Cumulative Evidence Matrix: {convictionSummary}");
+			Utils.ConsoleLog($"[CumulativeConviction] {name} ({player.SteamID}) {convDetails}");
+			_punishmentManager.Punish(player, _config.Conviction.Punishment, "CumulativeConviction", convictionSummary);
+		}
+
 		if (_config.Telemetry.DumpIncidents)
 		{
 			IncidentDumper.DumpIncident(
@@ -698,6 +711,26 @@ public sealed class AegisAC : BasePlugin
 		}
 
 		context.Reply($"[{Prefix} Exploits] tick={CurrentTick} {_exploits.Stats()}");
+	}
+
+	[Command("aegis_suspects", registerRaw: true, permission: "@css/root")]
+	public void SuspectsCommand(ICommandContext context)
+	{
+		var suspects = _conviction.GetActiveSuspects();
+		if (suspects.Count == 0)
+		{
+			context.Reply($"[{Prefix}] No active suspects tracked with significant suspicion score.");
+			return;
+		}
+
+		context.Reply($"[{Prefix}] === Active Suspects Matrix ({suspects.Count}) ===");
+		for (int i = 0; i < Math.Min(suspects.Count, 10); i++)
+		{
+			var s = suspects[i];
+			string status = s.HasBeenConvicted ? "[CONVICTED]" : "[SUSPECT]";
+			string modules = string.Join(", ", s.ModuleCounts.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key}[{kv.Value}x]"));
+			context.Reply($"#{i + 1} {s.PlayerName} (Steam: {s.SteamId}) Score: {s.DecayedScore:F1}/{_config.Conviction.ConvictionThreshold:F1} {status} | Modules: {modules}");
+		}
 	}
 
 	private void AnnounceAntiAim(IPlayer player, string detection, string evidence) =>
